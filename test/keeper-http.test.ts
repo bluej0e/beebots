@@ -171,7 +171,7 @@ describe("beekeeper routes: connect and disconnect", () => {
     for (const publicUrl of ["http://localhost:5173", "http://127.0.0.1", `http://${lan(192, 168, 1, 20)}`, `http://${lan(10, 0, 0, 5)}:8080`, "http://bees.local"]) {
       const res = await r.post("/keeper/connect", { hookUrl: HOOK, publicUrl });
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain("Zapier cannot reach this address");
+      expect(res.body.error).toContain("The Beekeeper cannot reach this address");
     }
     // nothing but the two fields; a body over 16 KiB; a body that is not JSON
     expect((await r.post("/keeper/connect", { hookUrl: HOOK, publicUrl: PUBLIC, everyHours: 0.01 })).status).toBe(400);

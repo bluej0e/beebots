@@ -42,7 +42,9 @@ export function parseHookUrl(v: unknown): string | null {
   if (typeof v !== "string" || v.length > 500) return null;
   try {
     const u = new URL(v.trim());
-    return u.protocol === "https:" && u.hostname && !u.username && !u.password ? u.href : null;
+    // http only for a hook on this machine (a self-hosted Beekeeper next to the engine): nothing crosses a network.
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname);
+    return (u.protocol === "https:" || (u.protocol === "http:" && loopback)) && u.hostname && !u.username && !u.password ? u.href : null;
   } catch {
     return null;
   }
@@ -207,12 +209,12 @@ export class KeeperHttp {
       if (settings.hookFromEnv) return this.reply(res, 409, { error: "BEEKEEPER_WEBHOOK_URL is set in this server's environment. Change it there." });
       const p = ConnectReq.safeParse(body);
       const hookUrl = p.success ? parseHookUrl(p.data.hookUrl) : null;
-      if (!p.success || !hookUrl) return this.reply(res, 400, { error: "That is not a hook URL. Copy the Catch Hook URL from step 1 of your Zap. It starts with https://." });
+      if (!p.success || !hookUrl) return this.reply(res, 400, { error: "That is not a hook URL. Paste the Beekeeper's hook URL. It starts with https://, or http://127.0.0.1 for a Beekeeper on this machine." });
       let publicUrl: string | undefined;
       if (!settings.publicUrlFromEnv) {
         const given = parsePublicUrl(p.data.publicUrl);
         if (!given) return this.reply(res, 400, { error: "This page's address is missing or not valid. Open the dashboard on its public address and connect again." });
-        if (isPrivateAddress(given)) return this.reply(res, 400, { error: "Zapier cannot reach this address. Open the dashboard on its public address (your server's IP or domain) and connect again." });
+        if (isPrivateAddress(given)) return this.reply(res, 400, { error: "The Beekeeper cannot reach this address. Open the dashboard on its public address (your server's IP or domain) and connect again." });
         publicUrl = given;
       }
       settings.connect(hookUrl, publicUrl);

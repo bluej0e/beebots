@@ -21,6 +21,7 @@ import { createOkxCli } from "./okx/cli.js";
 import { createNewsSource } from "./okx/news.js";
 import { createPublicApi } from "./okx/public.js";
 import { createOkxPublicRest } from "./okx/rest.js";
+import { designBeeClaude } from "./claude.js";
 import { safeError } from "./redact.js";
 import { startServer } from "./server.js";
 import { loadSettings, STYLE_INFO } from "./settings.js";
@@ -67,6 +68,10 @@ function runSetup() {
     jevModel: env.JEV_MODEL?.trim() || "jev-1.13.0",
     openai: { apiKey: env.OPENAI_API_KEY?.trim() || undefined, textModel: env.OPENAI_TEXT_MODEL?.trim() || "gpt-5.4-nano", imageModel: env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-2" },
     refDir: REF_DIR,
+    // DESIGNER=claude: Claude (local `claude` CLI) designs the bees; OpenAI still paints them.
+    ...(env.DESIGNER?.trim().toLowerCase() === "claude"
+      ? { design: (k: string, _m: string, d: string, c: string[]) => designBeeClaude(k, env.CLAUDE_DESIGN_MODEL?.trim() || "claude-opus-5-5", d, c), designNeedsKey: false }
+      : {}),
     windowMin: Math.max(1, Number(env.SETUP_WINDOW_MIN) || 120),
     okxApiBase: env.OKX_API_BASE?.trim().replace(/\/+$/, "") || "https://eea.okx.com",
     onSaved: () => {

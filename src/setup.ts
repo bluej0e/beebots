@@ -19,6 +19,7 @@ import { BIZZY_BREAKOUT_COINS } from "./bees/bizzy.js";
 import { BREEZY_COINS } from "./bees/breezy.js";
 import { deriveStyle } from "./bees/custom.js";
 import { fetchXperpCoins } from "./okx/public.js";
+import { ClaudeError } from "./claude.js";
 import { checkOpenAiKey, designBee, OpenAiError, paintBee, type BeeDesign } from "./openai.js";
 import { safeError } from "./redact.js";
 import { clientAddr } from "./visitors.js";
@@ -50,6 +51,8 @@ export interface SetupOpts {
   listCoins?: () => Promise<string[]>;
   /** Injectable for tests; default: one OpenAI text call. */
   design?: (key: string, model: string, description: string, coins: string[]) => Promise<BeeDesign>;
+  /** false when `design` is not OpenAI (DESIGNER=claude), so designing needs no OpenAI key. Default true. */
+  designNeedsKey?: boolean;
   /** Injectable for tests; default: one OpenAI image call. */
   paint?: (key: string, model: string, refDir: string, name: string, look: string) => Promise<Buffer>;
 }
@@ -57,7 +60,7 @@ export interface SetupOpts {
 export class DesignError extends Error {}
 
 export const TIMED_OUT =
-  "Setup timed out to keep this server safe. Restart the engine container (Hostinger Docker Manager → Restart, or `docker compose restart engine`) to open it again.";
+  "Setup timed out to keep this server safe. Restart the engine to open it again.";
 
 const reservedMsg = (name: string) =>
   `"${name}" belongs to one of the official bees (${STYLES.map((s) => STYLE_INFO[s].name).join(", ")}). Pick another name.`;
@@ -228,7 +231,7 @@ export class Setup {
         send(res, 422, { error: err.message });
         return true;
       }
-      const msg = err instanceof OpenAiError ? `OpenAI said: ${err.message}` : safeError(err).message;
+      const msg = err instanceof OpenAiError ? `OpenAI said: ${err.message}` : err instanceof ClaudeError ? `Claude said: ${err.message}` : safeError(err).message;
       log.warn("setup step failed", { step: path, err: safeError(err) });
       send(res, 502, { error: msg });
     }
@@ -259,7 +262,7 @@ export class Setup {
       case "/setup/design": {
         const key = this.openaiKey(body);
         const description = String(body.description ?? "").trim();
-        if (!key) return send(res, 400, { error: "Designing a bee needs an OpenAI key." });
+        if (!key && this.o.designNeedsKey !== false) return send(res, 400, { error: "Designing a bee needs an OpenAI key." });
         if (description.length < 3) return send(res, 400, { error: "Tell us how you want this bee to trade first." });
         if (description.length > 400) return send(res, 400, { error: "Keep it under 400 characters." });
         if (this.designs >= MAX_DESIGNS) return send(res, 429, { error: "That is a lot of bees. Restart the engine to design more." });
@@ -271,7 +274,7 @@ export class Setup {
           return send(res, 502, { error: "Couldn't read OKX's coin list just now. Try again in a minute." });
         }
         this.designs++;
-        const d = finishDesign(await this.design(key, this.o.openai.textModel, description, known), known);
+        const d = finishDesign(await this.design(key ?? "", this.o.openai.textModel, description, known), known);
         return send(res, 200, { ...d, styleLabel: STYLE_INFO[d.baseStyle].label });
       }
 

@@ -116,7 +116,7 @@ const SKIPPED = [
   "Every bee was rewritten in the last 20 hours. Let the rules breathe.",
   "Nobody's due a rewrite yet. I only get one go per bee per day.",
 ];
-const FAILED = "Couldn't get through to Zapier this round. I'll knock again.";
+const FAILED = "Couldn't get through to the Beekeeper this round. I'll knock again.";
 const pick = (list: string[], n: number) => list[n % list.length]!;
 
 /** How each style works and what Jev sees for it: the part of the coach's brief that is the engine's to know. */

@@ -85,7 +85,7 @@ describe("setup", () => {
     t.advance(60_000);
     const r = await t.post("/setup/save", SAVE);
     expect(r.status).toBe(410);
-    expect(((await r.json()) as { error: string }).error).toMatch(/timed out.*docker compose restart engine/);
+    expect(((await r.json()) as { error: string }).error).toMatch(/timed out.*Restart the engine/);
     expect(loadSettings(t.settingsPath)).toBeNull();
     const s = (await (await fetch(`${t.base}/setup/status`)).json()) as { timedOut: boolean; needed: boolean };
     expect(s).toMatchObject({ timedOut: true, needed: true });
