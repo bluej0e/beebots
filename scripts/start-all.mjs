@@ -3,7 +3,7 @@
 // policy. Started at Windows logon by the "beebots" scheduled task (scripts/beebots-hidden.vbs); stop it with
 // `node scripts/stop-all.mjs`. Logs: data/logs/<part>.log
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, createWriteStream, mkdirSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,10 @@ const PARTS = [
   { name: "engine", cmd: NODE, args: [TSX, "--env-file-if-exists=.env", "src/index.ts"], cwd: ROOT },
   { name: "beekeeper", cmd: NODE, args: [TSX, "--env-file-if-exists=.env", "beekeeper/local.ts"], cwd: ROOT },
   { name: "site", cmd: NODE, args: [VITE, "preview"], cwd: DASH },
-  { name: "tunnel", cmd: CLOUDFLARED, args: ["--config", TUNNEL_CONFIG, "--metrics", "127.0.0.1:20299", "tunnel", "run", "beebots"], cwd: ROOT },
+  // Only when a tunnel is set up (README: "Share it on your own domain"); without one the site stays local.
+  ...(existsSync(TUNNEL_CONFIG)
+    ? [{ name: "tunnel", cmd: CLOUDFLARED, args: ["--config", TUNNEL_CONFIG, "--metrics", "127.0.0.1:20299", "tunnel", "run", "beebots"], cwd: ROOT }]
+    : []),
 ];
 
 mkdirSync(LOGS, { recursive: true });

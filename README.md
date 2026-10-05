@@ -16,28 +16,165 @@ account unless you change the settings yourself, on purpose.
 > put in. The software comes with no warranty (see [LICENSE](LICENSE)). If you ever switch it to real money, that
 > is your decision and your risk.
 
-## Run your own in one click
+> **This fork** ([bluej0e/beebots](https://github.com/bluej0e/beebots)) also runs on a Windows PC with no Docker
+> and no Zapier: Claude designs the bees and runs the Beekeeper, and a Cloudflare tunnel shares the dashboard. See
+> [Run it locally on Windows](#run-it-locally-on-windows). The Docker route below still works as before.
 
-[![Deploy on Hostinger](https://assets.hostinger.com/vps/deploy.svg)](https://www.hostg.xyz/aff_c?offer_id=815&aff_id=202403&url=https%3A%2F%2Fwww.hostinger.com%2Fdocker-hosting%3Fcompose_url%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2Fimikerussell%2Fbeebots%2Fmain%2Fdocker-compose.yml%26utm_medium%3Daffiliate%26utm_source%3Daff%7Baffiliate_id%7D%26utm_campaign%3D%7Boffer_id%7D%26session%3D%7Btransaction_id%7D)
+## Run it locally on Windows
 
-Use code **MAGIC10** at checkout for 10% off.
+Everything runs on your own PC: the engine, the dashboard, the Beekeeper, and optionally a Cloudflare tunnel so other
+people can watch. It starts by itself when you log in.
 
-1. Click the button, pick a VPS plan (a **KVM 2** is plenty) and check out. Hostinger sets up Docker and starts
-   beebots for you.
-2. Open your server's IP address in a browser. You'll see the **Setup** page. Do this soon: Setup stays open for
+**What you need:**
+
+- **Node.js 22.13 or newer**
+- **[Claude Code](https://claude.com/claude-code)**, signed in. Claude designs your bees on Setup and writes the
+  Beekeeper's new rules, through the `claude` command on your Claude plan. No Anthropic API key needed.
+- **A Jev key** from [console.typesafe.ai/keys](https://console.typesafe.ai/keys)
+- **An OpenAI key**, for the bee portraits only (a few cents in total)
+- **cloudflared** and a domain on Cloudflare, only if you want to share the dashboard
+
+### 1. Install
+
+```sh
+git clone https://github.com/bluej0e/beebots.git
+cd beebots
+npx pnpm@10.34.5 install
+cd dashboard && npx pnpm@10.34.5 install && cd ..
+```
+
+### 2. Settings
+
+Create `.env` in the `beebots` folder (it is git-ignored, never commit it):
+
+```sh
+# Claude designs the bees on Setup; OpenAI still paints the portraits.
+DESIGNER=claude
+CLAUDE_DESIGN_MODEL=claude-opus-5-5
+# Full path to the claude CLI, so it is found when beebots starts at logon (`where claude` shows it).
+CLAUDE_BIN=D:/npm-global/claude.cmd
+
+# The Beekeeper runs on this PC (beekeeper/local.ts) instead of a Zap.
+BEEKEEPER_WEBHOOK_URL=http://127.0.0.1:8787/hook
+PUBLIC_URL=http://127.0.0.1:8080
+CLAUDE_KEEPER_MODEL=claude-opus-5-5
+
+# How often each bee decides, in ms. 30000 = at most 6 Jev calls a minute for three bees.
+TICK_MS=30000
+```
+
+Every other setting is in [`.env.example`](.env.example).
+
+### 3. Start it
+
+```sh
+node scripts/start-all.mjs
+```
+
+This builds the dashboard and starts every part, restarting any part that stops (the engine stops on purpose after
+Setup):
+
+| part | address | what it is |
+|---|---|---|
+| engine | `127.0.0.1:8080` | the bees, the risk layer and the database |
+| Beekeeper | `127.0.0.1:8787` | the coach ([`beekeeper/local.ts`](beekeeper/local.ts)) |
+| site | **http://127.0.0.1:4173** | the dashboard; open this one |
+| tunnel | your domain | only if `~/.cloudflared/beebots.yml` exists (step 5) |
+
+Open http://127.0.0.1:4173 and go through **Setup** (see [Setup](#setup) below; the
+2-hour Setup window applies here too). When you press **Start paper trading**, the engine restarts with your bees.
+
+Logs are in `data/logs/` (one file per part, plus `start-all.log`). Stop everything with:
+
+```sh
+node scripts/stop-all.mjs
+```
+
+**Run Setup again:** stop it, delete `data/settings.json`, start it again.
+
+### 4. Start with Windows
+
+Register a scheduled task that runs [`scripts/beebots-hidden.vbs`](scripts/beebots-hidden.vbs) (it starts
+`start-all.mjs` with no window) when you log in. In PowerShell, from the `beebots` folder:
+
+```powershell
+$vbs = "$PWD\scripts\beebots-hidden.vbs"
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$vbs`"" -WorkingDirectory "$PWD"
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$trigger.Delay = "PT30S"
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "beebots" -Action $action -Trigger $trigger -Settings $settings
+```
+
+`beebots-hidden.vbs` expects Node at `C:\Program Files\nodejs\node.exe`; edit it if yours is elsewhere. Start it now
+without logging out with `schtasks /run /tn beebots`. Running a second copy is safe: it sees the first one and exits.
+
+It runs while you are logged in. If the PC sleeps or you sign out, the bees pause.
+
+### 5. Share it on your own domain (optional)
+
+A named Cloudflare tunnel gives the dashboard a fixed HTTPS address. Only the site is shared; the Beekeeper's
+delivery route (`/lab`) and the engine stay private, and owner actions still need your password.
+
+```sh
+cloudflared tunnel login
+cloudflared tunnel create beebots
+cloudflared tunnel route dns <tunnel-id> beebots.example.com
+```
+
+Use the tunnel's **id** in `route dns`, not its name: if you already have a `~/.cloudflared/config.yml` for another
+tunnel, cloudflared reads it and points the name at that tunnel instead. Then write `~/.cloudflared/beebots.yml`:
+
+```yaml
+tunnel: <tunnel-id>
+credentials-file: C:\Users\<you>\.cloudflared\<tunnel-id>.json
+no-autoupdate: true
+
+ingress:
+  - hostname: beebots.example.com
+    service: http://127.0.0.1:4173
+  - service: http_status:404
+```
+
+Add your hostname to `preview.allowedHosts` in [`dashboard/vite.config.ts`](dashboard/vite.config.ts), then restart
+beebots. `start-all.mjs` runs the tunnel whenever `beebots.yml` exists (`CLOUDFLARED_BIN` and
+`BEEBOTS_TUNNEL_CONFIG` override where it looks).
+
+For a quick throwaway link instead, `cloudflared tunnel --url http://127.0.0.1:4173` prints a random
+`*.trycloudflare.com` address that changes every time it starts. If you have a `~/.cloudflared/config.yml`, add
+`--config` with an empty file, or the quick tunnel picks up that file's rules and answers 404.
+
+## Run it on a server with Docker
+
+Any machine with Docker works:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/imikerussell/beebots/main/docker-compose.yml
+docker compose up -d
+```
+
+This runs the original author's published images, without this fork's changes (no Claude designer, no local
+Beekeeper). Then:
+
+1. Open `http://<your-server-ip>/` in a browser. You'll see the **Setup** page. Do this soon: Setup stays open for
    2 hours after the server starts (see [Setup safety](#setup-safety)).
-3. On Setup:
+2. Go through Setup (below).
+
+### Setup
+
+1. On Setup:
    - tick the three risk statements
    - pick an **owner password** (8+ characters). Your dashboard is public; the password is what lets *you* change
      things from it later, like joining or leaving the Hive. Write it down.
    - paste your **Jev key** (from [console.typesafe.ai/keys](https://console.typesafe.ai/keys))
-   - paste an **OpenAI key** (required: it designs your bees and paints them; a few cents in total)
+   - paste an **OpenAI key** (required: it designs your bees and paints them; a few cents in total. On the
+     [local setup](#run-it-locally-on-windows) with `DESIGNER=claude`, Claude designs them and OpenAI only paints)
    - design your three bees. For each one, answer **How do you want this bee to trade?** in a sentence ("a Trump bee
      that only ever trades TRUMP", "a sleepy bee that only buys bitcoin dips"), press **Create my bee**, and OpenAI
      invents its name, tagline, trading rules and the coins it may trade. Rename it if you like, then press
      **Generate your bee's portrait**. You can carry on once all three bees have their portraits.
    - choose whether to join **the Hive** (see below). "Not now" is fine; you can join later.
-4. Press **Start paper trading**. The engine restarts, and the dashboard goes live.
+2. Press **Start paper trading**. The engine restarts, and the dashboard goes live.
 
 | Agree to the rules | Pick an owner password | Design your bees |
 |---|---|---|
@@ -49,8 +186,8 @@ Setup has no code to find: the page is open to whoever reaches the server first.
 
 - **First come, first served.** Once you press Start, Setup closes for good. Nobody else can change your keys or bees.
 - **A setup window.** If nobody finishes Setup within 2 hours of the engine starting (`SETUP_WINDOW_MIN`, default
-  120), it locks, and the page says so. Restart the engine to open it again: Hostinger **Docker Manager** → the
-  `beebots` project → **Restart** on the `engine` container, or `docker compose restart engine`.
+  120), it locks, and the page says so. Restart the engine to open it again: `docker compose restart engine`, or
+  `node scripts/stop-all.mjs` then `node scripts/start-all.mjs` on the [local setup](#run-it-locally-on-windows).
 - **Caps** on the calls that cost money (designs and portraits), in total and per visitor.
 
 Set up right after deploying, and use a domain with HTTPS if you can (`PUBLIC_DOMAIN`, below) so your keys don't
@@ -65,17 +202,6 @@ a winner's rules and paste them into **How do you want this bee to trade?** to s
 
 Each bee starts with $333 of paper money. Jev spending is capped at $2 a day by default.
 
-### Already have a server?
-
-Any machine with Docker works:
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/imikerussell/beebots/main/docker-compose.yml
-docker compose up -d
-```
-
-Then open `http://<your-server-ip>/`.
-
 ### Updating
 
 New versions are published as [releases](https://github.com/imikerussell/beebots/releases). When one is out, your
@@ -88,7 +214,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Run it over SSH (or hPanel's browser terminal on Hostinger) in the folder that holds your `docker-compose.yml`
+Run it over SSH in the folder that holds your `docker-compose.yml`
 (`docker compose ls` shows where it is). To turn the check off, set `UPDATE_CHECK=false`.
 
 ## The Hive
@@ -111,15 +237,21 @@ The Hive is a public leaderboard at [beebots.tech](https://beebots.tech) where e
 
 The Hive is a game, not a signal service. **Not financial advice.**
 
-## The Beekeeper (optional, Zapier)
+## The Beekeeper (optional)
 
 The Beekeeper is an outside coach for your bees. Every few hours he looks at all three, and if one keeps losing
-because its rules are wrong, he writes it new rules. He runs as a Zap on Zapier: Jev picks the bee, and Claude
-Opus 5.5 writes the rules.
+because its rules are wrong, he writes it new rules. Jev picks the bee, and Claude Opus 5.5 writes the rules.
 
-- **Watch it being built:** [youtube.com/watch?v=cTUnM9trqfs](https://www.youtube.com/watch?v=cTUnM9trqfs)
-- **Set it up:** copy the Zap from [mrc.fm/beekeeper](https://mrc.fm/beekeeper), then paste its hook URL into
+- **On your own PC, no Zapier:** [`beekeeper/local.ts`](beekeeper/local.ts) runs the same round as the Zap: it reads
+  the scorecard, asks Jev the same three questions, has Claude write the rules with the Zap's own prompt
+  ([`beekeeper/opus-prompt.txt`](beekeeper/opus-prompt.txt)), then signs and delivers them. It uses the `claude` CLI
+  on your Claude plan. [Run it locally on Windows](#run-it-locally-on-windows) starts it for you; the
+  `BEEKEEPER_WEBHOOK_URL` and `PUBLIC_URL` lines in `.env` connect it, so there is nothing to paste on the dashboard.
+  Each round is logged to `data/beekeeper-diary.jsonl`. A plain `http://` hook is allowed only on this machine
+  (`127.0.0.1`, `localhost`); anywhere else it must be `https://`.
+- **On Zapier:** copy the Zap from [mrc.fm/beekeeper](https://mrc.fm/beekeeper), then paste its hook URL into
   **Connect the Beekeeper** on your dashboard. The full walk-through is in [docs/BEEKEEPER.md](docs/BEEKEEPER.md).
+- **Watch it being built:** [youtube.com/watch?v=cTUnM9trqfs](https://www.youtube.com/watch?v=cTUnM9trqfs)
 - **What he can change:** a bee's rules text and its coin list. Never leverage, stops, caps or real money settings.
   One rewrite per bee every 20 hours.
 - **You stay in charge:** every rewrite shows on the dashboard with an **Undo** next to it. Undo, Connect and
@@ -170,7 +302,7 @@ Jev is stateless and never sees an order endpoint. If Jev is down or slow, the b
 ## Settings
 
 Most people need none: Setup covers the keys. To change anything else, create a `.env` next to
-`docker-compose.yml` (or set the variables in Hostinger Docker Manager) and restart. Every setting is documented
+`docker-compose.yml` (or in the `beebots` folder on the [local setup](#run-it-locally-on-windows)) and restart. Every setting is documented
 in [`.env.example`](.env.example). The common ones:
 
 | setting | default | what it does |
@@ -187,15 +319,15 @@ docker compose exec engine rm /data/settings.json
 docker compose restart engine
 ```
 
-Run these on the server (on Hostinger, over SSH from hPanel), then open the site and go through Setup again. The
+Run these on the server, then open the site and go through Setup again. The
 setup window starts over with the restart.
 
 **Owner password:** it's stored only as a salted hash in `/data/settings.json`, so nobody (including you) can read it
 back. If you forget it, run Setup again as above. Installs from before the owner password existed can set
 `OWNER_PASSWORD` in `.env` (8+ characters) instead.
 
-**Something wrong?** The engine's log says what it's doing: `docker compose logs engine`, or Hostinger Docker
-Manager → the `engine` container's logs.
+**Something wrong?** The engine's log says what it's doing: `docker compose logs engine`, or `data/logs/engine.log`
+on the local setup.
 
 **Backups:** a sidecar writes a nightly copy of each database to `/data/backups` inside the `bees-data` volume and
 keeps 7 days. That copy lives on the same server, so take an off-server copy yourself if you care about the history.
@@ -232,6 +364,16 @@ pnpm dev             # the real engine on paper, with real Jev calls (Setup runs
 cd dashboard && pnpm install && pnpm dev    # http://127.0.0.1:5173, proxied to the engine
 ```
 
+On Windows, `pnpm dev` fails: its script sets a variable the Unix way. Run the engine directly instead (the default
+database path is the same):
+
+```sh
+node node_modules/tsx/dist/cli.mjs --env-file-if-exists=.env src/index.ts
+```
+
+Three tests check Unix file permissions (`0600` for the settings, Hive and Beekeeper files) and fail on Windows, which
+has no such permissions. They pass on Linux and in Docker.
+
 Build the images yourself instead of pulling them:
 
 ```sh
@@ -248,6 +390,6 @@ logger and the event stream redact anything that looks like a key, an IP address
 ## Credits
 
 Built by Mike on the Creator Magic YouTube channel, in the video "I gave three AI bees $1,000".
-Hosted on [Hostinger](https://www.hostg.xyz/aff_c?offer_id=815&aff_id=202403&url=https%3A%2F%2Fwww.hostinger.com%2Fdocker-hosting%3Fcompose_url%3Dhttps%3A%2F%2Fraw.githubusercontent.com%2Fimikerussell%2Fbeebots%2Fmain%2Fdocker-compose.yml%26utm_medium%3Daffiliate%26utm_source%3Daff%7Baffiliate_id%7D%26utm_campaign%3D%7Boffer_id%7D%26session%3D%7Btransaction_id%7D). Decisions by [Jev](https://typesafe.ai).
+Decisions by [Jev](https://typesafe.ai).
 
 MIT licence. No warranty. Not financial advice.
