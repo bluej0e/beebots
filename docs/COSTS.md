@@ -43,7 +43,7 @@ X-Perps charge continuous funding, settled at 00:00, 08:00 and 16:00 UTC, capped
 
 | item | cost |
 |---|---|
-| Hostinger KVM 2 | $8.99/mo intro (24-month term), renews $14.99 |
+| A small VPS (2 vCPU, 8 GB), or your own PC | about $9-15/mo, or free |
 | OKX account, sub-accounts, API, demo | free |
 | Coinbase → OKX (USDC on Base) | cents |
 | OKX → Coinbase (USDC on Arbitrum) | 0.0065 USDC (Base 0.042, **never Ethereum mainnet: 1.46**) |

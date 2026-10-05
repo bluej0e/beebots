@@ -7,7 +7,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 #
 # Settings: most people need none (Setup asks for your keys). Anything below can be set in a .env file next to this
-# one, or in Hostinger Docker Manager's environment variables. See .env.example for the full list.
+# one, or in your host's environment variables for the container. See .env.example for the full list.
 name: beebots
 
 services:

@@ -18,8 +18,9 @@ with real money.
 - **A Zapier account** on a plan that includes Premium AI models. The Zap uses Claude Opus 5.5.
 - **A TypeSafe key for Jev.** The same kind of key your bees use. Get one at
   [console.typesafe.ai/keys](https://console.typesafe.ai/keys).
-- **A running beebots** that the internet can reach. A server from the one-click deploy is fine. A copy running on
-  your own laptop is not: Zapier has to be able to call it.
+- **A running beebots** that the internet can reach. A server running the Docker setup is fine. A copy running on
+  your own laptop is not: Zapier has to be able to call it. (On your own PC, use the local Beekeeper instead: see
+  [Run it locally on Windows](../README.md#run-it-locally-on-windows). It needs no Zapier and no public address.)
 - **Your owner password.** The one you picked on Setup.
 
 ## Set it up in 5 steps

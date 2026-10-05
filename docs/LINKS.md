@@ -42,13 +42,9 @@
 - https://www.okx.com/en-us/help/okx-x-perps-eea-what-are-expiry-perps: explainer (continuous funding, real-time margining).
 - https://www.okx.com/en-eu/learn/how-to-start-trading-x-perps-on-okx: states **demo trading for X-Perps is available in the EEA**.
 
-## Hostinger
-- https://www.hostinger.com/vps-hosting: plans (KVM 2: 2 vCPU / 8 GB / 100 GB NVMe / 8 TB).
-- https://www.hostinger.com/support/5634532-how-to-generate-ssh-keys-and-add-them-to-hostinger-dashboard/: add your SSH key in hPanel.
-- https://www.hostinger.com/support/8306612-how-to-use-the-docker-vps-template-at-hostinger/: Ubuntu 24.04 + Docker template.
-- https://www.hostinger.com/support/9615197-how-to-use-the-coolify-vps-template-at-hostinger/: Coolify template (optional).
-- https://www.hostinger.com/support/4805502-how-to-set-up-a-firewall-at-vps/: hPanel firewall (drop-all default once on; add 22/80/443).
-- https://docs.hostinger.com/api-reference/overview: Hostinger API.
+## Hosting
+- https://docs.docker.com/engine/install/: Docker on any Linux VPS (2 vCPU / 8 GB is plenty).
+- https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/: Cloudflare Tunnel, to share a copy running on your own PC.
 
 ## Strategy research
 See the individual files in `strategies/`. Every paper, backtest and code source is cited there with a link.

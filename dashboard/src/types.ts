@@ -185,7 +185,7 @@ export const BEE_META: Record<BeeName, BeeMeta> = {
 export interface Profile {
   setup: boolean;
   mode: "dry" | "demo" | "live";
-  links: { sponsor: string; code: string } | null;
+  links: { code: string } | null;
   /** img null: a Setup-made bee without its portrait (the dashboard shows the placeholder mark). */
   bees: Array<{ id: BeeName; name: string; tagline: string; style: string; styleLabel: string; rules?: string; coins?: string[]; img: string | null }>;
 }

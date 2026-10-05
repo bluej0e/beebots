@@ -115,8 +115,7 @@ const EnvSchema = z.object({
   OPENAI_API_KEY: opt,
   OPENAI_TEXT_MODEL: str("gpt-5.4-nano"),
   OPENAI_IMAGE_MODEL: str("gpt-image-2"),
-  // Optional links shown on the dashboard (the "Hosted on Hostinger" chip and the "Get the code" link).
-  HOST_LINK: str("https://mrc.fm/beebots"),
+  // The code link on the dashboard ("Update available" points at its releases).
   REPO_LINK: str("https://github.com/imikerussell/beebots"),
   // The Hive: the public leaderboard that installs can join (paper only). Reports go to <HIVE_URL>/hive/report.
   HIVE_URL: str("https://beebots.tech"),
@@ -185,7 +184,7 @@ export interface Config {
   mode: Mode;
   slots: Record<BeeId, SlotProfile>;
   openai: { apiKey?: string; textModel: string; imageModel: string };
-  links: { sponsor: string; code: string };
+  links: { code: string };
   hive: { url: string };
   update: { enabled: boolean; repo: string; version: string };
   settingsPath: string;
@@ -295,7 +294,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     mode,
     slots,
     openai: { apiKey: e.OPENAI_API_KEY ?? settings?.openaiKey, textModel: e.OPENAI_TEXT_MODEL, imageModel: e.OPENAI_IMAGE_MODEL },
-    links: { sponsor: e.HOST_LINK, code: e.REPO_LINK },
+    links: { code: e.REPO_LINK },
     hive: { url: e.HIVE_URL.replace(/\/+$/, "") },
     update: { enabled: e.UPDATE_CHECK, repo: e.UPDATE_REPO, version: e.APP_VERSION },
     settingsPath: e.SETTINGS_PATH,
