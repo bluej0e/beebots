@@ -209,8 +209,7 @@ export function Setup() {
         <div className="setup-card center">
           <h1>Setup timed out</h1>
           <p>
-            Setup timed out to keep this server safe. Restart the engine container (Hostinger <b>Docker Manager</b> → <b>Restart</b>, or{" "}
-            <code>docker compose restart engine</code>) to open it again.
+            Setup timed out to keep this server safe. Restart the engine to open it again.
           </p>
         </div>
       </div>
@@ -504,11 +503,8 @@ export function Setup() {
                 : "Your bees stay off the Hive. You can join later from the dashboard."}
             </p>
             <p className="dim small">
-              Optional, once you are trading: give your bees a coach. The <b>Beekeeper</b> card on your dashboard connects a Zap on Zapier that can rewrite a
-              losing bee's rules.{" "}
-              <a href="https://github.com/imikerussell/beebots/blob/main/docs/BEEKEEPER.md" target="_blank" rel="noopener">
-                How it works ↗
-              </a>
+              Optional, once you are trading: give your bees a coach. The <b>Beekeeper</b> card on your dashboard runs a coach on this machine that can rewrite a
+              losing bee's rules.
             </p>
             <div className="setup-actions">
               <button className="ghost" onClick={() => setStep(5)}>
