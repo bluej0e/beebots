@@ -109,7 +109,8 @@ Register-ScheduledTask -TaskName "beebots" -Action $action -Trigger $trigger -Se
 `beebots-hidden.vbs` expects Node at `C:\Program Files\nodejs\node.exe`; edit it if yours is elsewhere. Start it now
 without logging out with `schtasks /run /tn beebots`. Running a second copy is safe: it sees the first one and exits.
 
-It runs while you are logged in. If the PC sleeps or you sign out, the bees pause.
+It runs while you are logged in. If the PC sleeps or you sign out, the bees pause. To keep them running around the
+clock, run the engines on a small server instead: see [deploy/vps/README.md](deploy/vps/README.md).
 
 ### 5. Share it on your own domain (optional)
 
@@ -255,7 +256,7 @@ because its rules are wrong, he writes it new rules. Jev picks the bee, and Clau
 - **What he can change:** a bee's rules text and its coin list. Never leverage, stops, caps or real money settings.
   One rewrite per bee every 20 hours.
 - **You stay in charge:** every rewrite shows on the dashboard with an **Undo** next to it. Undo, Connect and
-  Disconnect need your owner password.
+  the On/Off switch need your owner password.
 - **Works on paper.** No exchange account needed.
 
 ## How your bees trade

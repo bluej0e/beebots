@@ -1,0 +1,96 @@
+# beebots VPS (Oracle, /etc/caddy/Caddyfile). Every site listens on 127.0.0.1 only: the Cloudflare tunnel on the same
+# machine publishes them (deploy/vps/cloudflared.yml). Engines: beebots@lab1..3 on 8080-8082.
+{
+	admin off
+}
+
+(lab) {
+	bind 127.0.0.1
+	encode zstd gzip
+
+	# Read-only engine endpoints.
+	@api {
+		method GET
+		path /events /snapshot /history /equity /visit /health /profile /bee-image/* /setup/status /hive/status /keeper/scorecard
+	}
+	handle @api {
+		reverse_proxy 127.0.0.1:{args.0} {
+			flush_interval -1
+		}
+	}
+
+	# Owner controls (the engine needs the owner password for each) and the Beekeeper's door.
+	@owner {
+		method POST
+		path /hive/join /hive/leave /keeper/* /lab/*
+	}
+	handle @owner {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy 127.0.0.1:{args.0}
+	}
+
+	handle {
+		root * /srv/dashboard
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# Overview (beebots.covewrk.com): every bee in every lab. /lab/N/... are read-only GETs to lab N's engine.
+http://:4170 {
+	bind 127.0.0.1
+	encode zstd gzip
+	@lab1 {
+		method GET
+		path /lab/1/snapshot /lab/1/profile /lab/1/bee-image/*
+	}
+	@lab2 {
+		method GET
+		path /lab/2/snapshot /lab/2/profile /lab/2/bee-image/*
+	}
+	@lab3 {
+		method GET
+		path /lab/3/snapshot /lab/3/profile /lab/3/bee-image/*
+	}
+	handle @lab1 {
+		uri strip_prefix /lab/1
+		reverse_proxy 127.0.0.1:8080
+	}
+	handle @lab2 {
+		uri strip_prefix /lab/2
+		reverse_proxy 127.0.0.1:8081
+	}
+	handle @lab3 {
+		uri strip_prefix /lab/3
+		reverse_proxy 127.0.0.1:8082
+	}
+	handle {
+		root * /srv/overview
+		header Cache-Control no-cache
+		file_server
+	}
+	header -Server
+}
+
+http://:4173 {
+	import lab 8080
+}
+
+http://:4174 {
+	import lab 8081
+}
+
+http://:4175 {
+	import lab 8082
+}

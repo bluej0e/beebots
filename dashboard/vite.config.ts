@@ -8,6 +8,6 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 5173, proxy },
   // The shared site: the built dashboard behind a Cloudflare tunnel (beebots.covewrk.com, or a quick *.trycloudflare.com one). /lab stays private.
-  preview: { port: 4173, host: "127.0.0.1", proxy, allowedHosts: ["beebots.covewrk.com", ".trycloudflare.com"] },
+  preview: { port: 4173, host: "127.0.0.1", proxy, allowedHosts: ["beebots.covewrk.com", "beebots-lab1.covewrk.com", "beebots-lab2.covewrk.com", "beebots-lab3.covewrk.com", ".trycloudflare.com"] },
   build: { outDir: "dist", sourcemap: false, target: "es2022" },
 });

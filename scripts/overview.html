@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#08070c" />
+<title>beebots labs</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23f5b301'/><path d='M6 13h20M6 19h20' stroke='%2308070c' stroke-width='3'/></svg>" />
+<style>
+  :root {
+    --bg: #08070c; --panel: #12101a; --panel2: #1a1724; --line: #2a2536;
+    --text: #f2eee6; --muted: #9a93a8; --honey: #f5b301; --up: #3ddc84; --down: #ff5c6c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 Inter, system-ui, -apple-system, Segoe UI, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 22px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+  h1 span { color: var(--honey); }
+  .sub { color: var(--muted); font-size: 14px; }
+  .labs { display: grid; gap: 18px; }
+  .lab { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .lab-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .lab-title { font-weight: 700; font-size: 17px; }
+  .lab-title small { color: var(--muted); font-weight: 500; font-size: 14px; margin-left: 6px; }
+  .open { color: var(--bg); background: var(--honey); text-decoration: none; font-weight: 700; font-size: 13px; padding: 7px 12px; border-radius: 8px; white-space: nowrap; }
+  .open:hover { filter: brightness(1.1); }
+  .bees { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bee { padding: 16px 18px; border-left: 1px solid var(--line); min-width: 0; }
+  .bee:first-child { border-left: 0; }
+  .bee.lead { background: linear-gradient(180deg, rgba(245,179,1,.08), transparent 70%); }
+  .who { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
+  .who img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--panel2); flex: none; }
+  .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crown { color: var(--honey); font-size: 12px; font-weight: 700; margin-left: 4px; }
+  .pnl { font: 700 28px/1.1 "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .eq { color: var(--muted); font-size: 13px; margin: 2px 0 12px; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); } .down { color: var(--down); } .flat { color: var(--muted); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+  dt { color: var(--muted); } dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { margin-top: 10px; color: var(--muted); font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .err { padding: 18px; color: var(--down); font-size: 14px; }
+  footer { margin-top: 22px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 760px) {
+    .bees { grid-template-columns: 1fr; }
+    .bee { border-left: 0; border-top: 1px solid var(--line); }
+    .bee:first-child { border-top: 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>bee<span>bots</span> labs</h1>
+    <div class="sub">9 clones of Orakelia, 3 experiments, paper trading · <span id="updated">loading…</span></div>
+  </header>
+  <section class="labs" id="labs"></section>
+  <footer>Each lab changes one thing; everything else is Orakelia's rules on the Momentum engine. Started 5 Oct 2026, $333 per bee.</footer>
+</main>
+<script>
+  const LABS = [
+    { n: 1, title: "Lab 1", what: "minimum hold before bailing", url: "https://beebots-lab1.covewrk.com" },
+    { n: 2, title: "Lab 2", what: "stop width (risk)", url: "https://beebots-lab2.covewrk.com" },
+    { n: 3, title: "Lab 3", what: "coin range", url: "https://beebots-lab3.covewrk.com" },
+  ];
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const money = (x) => (x < 0 ? "-$" : "$") + Math.abs(x).toFixed(2);
+  const pct = (x) => (x > 0 ? "+" : "") + x.toFixed(2) + "%";
+  const cls = (x) => (x > 0.004 ? "up" : x < -0.004 ? "down" : "flat");
+  const held = (m) => (m == null ? "" : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
+  const get = (n, p) => fetch(`/lab/${n}/${p}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
+
+  // Skeleton once, so refreshes only swap contents.
+  document.getElementById("labs").innerHTML = LABS.map((l) => `
+    <article class="lab">
+      <div class="lab-head">
+        <div class="lab-title">${l.title}<small>${l.what}</small></div>
+        <a class="open" href="${l.url}" target="_blank" rel="noopener">Open lab dashboard →</a>
+      </div>
+      <div class="bees" id="lab${l.n}"><div class="err" style="color:var(--muted)">loading…</div></div>
+    </article>`).join("");
+
+  const profiles = {};
+  async function render(l) {
+    const box = document.getElementById(`lab${l.n}`);
+    try {
+      profiles[l.n] ??= await get(l.n, "profile");
+      const snap = await get(l.n, "snapshot");
+      const names = Object.fromEntries(profiles[l.n].bees.map((b) => [b.id, b]));
+      const best = Math.max(...snap.bees.map((b) => b.pnlPct));
+      box.innerHTML = snap.bees.map((b) => {
+        const p = names[b.bee] ?? {};
+        const pos = b.position;
+        const lead = snap.bees.some((o) => o.pnlPct !== best) && b.pnlPct === best;
+        return `<div class="bee${lead ? " lead" : ""}">
+          <div class="who">
+            <img src="/lab/${l.n}/bee-image/${esc(b.bee)}" alt="" onerror="this.style.visibility='hidden'" />
+            <div style="min-width:0"><div class="name">${esc(p.name ?? b.bee)}${lead ? '<span class="crown">LEADS</span>' : ""}</div><div class="tag">${esc(p.tagline)}</div></div>
+          </div>
+          <div class="pnl ${cls(b.pnlPct)}">${pct(b.pnlPct)}</div>
+          <div class="eq">${money(b.equityUsd)} equity · ${money(b.pnlUsd)}</div>
+          <dl>
+            <dt>Holding</dt><dd>${pos ? `${esc(pos.coin)} ${esc(pos.side)} · ${held(pos.minutesHeld)}` : `flat${b.flatMinutes != null ? ` · ${held(b.flatMinutes)}` : ""}`}</dd>
+            <dt>Open P&amp;L</dt><dd class="${pos ? cls(pos.uplUsd) : "flat"}">${pos ? money(pos.uplUsd) : "—"}</dd>
+            <dt>Realised</dt><dd class="${cls(b.totals.realisedUsd)}">${money(b.totals.realisedUsd)}</dd>
+            <dt>Orders · fees</dt><dd>${b.totals.orders} · ${money(b.totals.feesUsd)}</dd>
+          </dl>
+          <div class="status" title="${esc(b.last?.status)}">${esc(b.last?.status ?? "")}</div>
+        </div>`;
+      }).join("");
+    } catch {
+      box.innerHTML = `<div class="err">Lab ${l.n} is unreachable right now. The bees keep trading on the server; this page retries every 15 s.</div>`;
+    }
+  }
+  async function tick() {
+    await Promise.all(LABS.map(render));
+    document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  }
+  tick();
+  setInterval(tick, 15000);
+</script>
+</body>
+</html>
