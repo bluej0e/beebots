@@ -763,7 +763,14 @@ export class Engine {
   }
 
   private knobs(id: BeeId) {
-    return this.d.cfg.bees[this.d.cfg.slots[id].style];
+    const slot = this.d.cfg.slots[id];
+    const k = this.d.cfg.bees[slot.style];
+    if (slot.minHoldHours === undefined && slot.trailAtr === undefined) return k;
+    return {
+      ...k,
+      ...(slot.minHoldHours !== undefined ? { minHoldMinutes: slot.minHoldHours * 60 } : {}),
+      ...(slot.trailAtr !== undefined ? { trailAtr: slot.trailAtr } : {}),
+    };
   }
 
   private checkJevOutage(now: number) {

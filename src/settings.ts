@@ -71,6 +71,10 @@ const BeeSchema = z.object({
   look: z.string().trim().max(400).optional(),
   /** true once a portrait has been generated for this bee (served from the data volume). */
   image: z.boolean().default(false),
+  /** Momentum only: hours a pick is held before bailing/rotating unlock (default 24). For A/B tests. */
+  minHoldHours: z.number().positive().max(24 * 14).optional(),
+  /** Momentum only: trailing/initial stop distance in ATR(1h) (default 3). For A/B tests. */
+  trailAtr: z.number().min(0.5).max(10).optional(),
 });
 
 export const SettingsSchema = z.object({

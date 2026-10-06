@@ -158,6 +158,10 @@ export interface BeeKnobs {
   stopAtrMult: number;
   /** Effective max flat minutes: min(per-bee, global MAX_FLAT_MINUTES). 0 means "never flat past one tick". */
   maxFlatMinutes: number;
+  /** Per-bee override of the Momentum minimum hold (settings.json minHoldHours). Unset = the style's default. */
+  minHoldMinutes?: number;
+  /** Per-bee override of the Momentum stop distance in ATR(1h) (settings.json trailAtr). */
+  trailAtr?: number;
 }
 
 export interface OkxCreds {
@@ -178,6 +182,10 @@ export interface SlotProfile {
   coins: string[];
   /** Made on the Setup page (never shown with the original bees' art). */
   fromSetup: boolean;
+  /** Momentum minimum hold override, in hours (settings.json). */
+  minHoldHours?: number;
+  /** Momentum stop distance override, in ATR(1h) (settings.json). */
+  trailAtr?: number;
 }
 
 export interface Config {
@@ -255,7 +263,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     const b = settings?.bees[i];
     const style = b?.style ?? DEFAULT_SLOTS[id];
     slots[id] = b
-      ? { style, name: b.name, tagline: b.tagline, customImage: b.image, rules: b.rules, coins: b.coins, fromSetup: true }
+      ? { style, name: b.name, tagline: b.tagline, customImage: b.image, rules: b.rules, coins: b.coins, fromSetup: true, minHoldHours: b.minHoldHours, trailAtr: b.trailAtr }
       : { style, name: STYLE_INFO[style].name, tagline: STYLE_INFO[style].tagline, customImage: false, rules: "", coins: [], fromSetup: false };
   });
 

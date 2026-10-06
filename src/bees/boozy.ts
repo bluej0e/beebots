@@ -66,7 +66,7 @@ export const boozy: BeeBrain = {
   profitLock: BOOZY_PROFIT_LOCK,
   protectAdds: true,
   strategy:
-    "You are boozy-bee, the degen. Back the week's hottest coin (7-day momentum, including the strange ones) and ride it hard. Always holding something. Enter at 1x, DOUBLE_DOWN into a winner every time it runs another ATR, up to 2x. Commit to each pick for at least 24 hours: rotating and bailing only unlock after that. The code trails a wide stop for you.",
+    "You are boozy-bee, the degen. Back the week's hottest coin (7-day momentum, including the strange ones) and ride it hard. Always holding something. Enter at 1x, DOUBLE_DOWN into a winner every time it runs another ATR, up to 2x. Commit to each pick for the minimum hold: rotating and bailing only unlock after that. The code trails a wide stop for you.",
   convictionLabels: ["tipsy", "buzzed", "wasted", "legendary"],
 
   universe(ctx) {
@@ -112,7 +112,7 @@ export const boozy: BeeBrain = {
     const s = ctx.view.stats.get(p.instId);
     const inst = ctx.view.instruments.get(p.instId);
     m.RIDE = { desc: "keep position", intent: { kind: "hold" } };
-    const committed = minutesSince(p.openedAt, ctx.now) < BOOZY_MIN_HOLD_MIN;
+    const committed = minutesSince(p.openedAt, ctx.now) < (ctx.knobs.minHoldMinutes ?? BOOZY_MIN_HOLD_MIN);
     if (!committed) m.BAIL = { desc: "close now", intent: { kind: "close", reason: "bail" } };
     const best = switchTarget(ctx, top);
     if (best && !committed) {
@@ -150,7 +150,8 @@ export const boozy: BeeBrain = {
     const s = ctx.view.stats.get(instId);
     const atr = atr1hPx(s);
     if (atr === null) return atrStop(s, side, entryPx, ctx.knobs.stopAtrMult);
-    return side === "long" ? entryPx - TRAIL_ATR1H * atr : entryPx + TRAIL_ATR1H * atr;
+    const k = ctx.knobs.trailAtr ?? TRAIL_ATR1H;
+    return side === "long" ? entryPx - k * atr : entryPx + k * atr;
   },
 
   trail(ctx) {
@@ -159,6 +160,7 @@ export const boozy: BeeBrain = {
     const s = p ? ctx.view.stats.get(p.instId) : undefined;
     const atr = atr1hPx(s);
     if (!p || !s || atr === null) return null;
-    return p.side === "long" ? s.mid - TRAIL_ATR1H * atr : s.mid + TRAIL_ATR1H * atr;
+    const k = ctx.knobs.trailAtr ?? TRAIL_ATR1H;
+    return p.side === "long" ? s.mid - k * atr : s.mid + k * atr;
   },
 };

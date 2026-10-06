@@ -143,6 +143,22 @@ describe("boozy", () => {
     const old = boozy.menu(ctx("boozy", bee("boozy", { position: position(s, { openedAt: NOW - 24 * 60 * 60_000 }), flatSince: null, top1: { coin: "PEPE", streak: 2, rankedAt: NOW } }), v));
     expect(old.BAIL && old.SWITCH_COIN && old.FLIP_SHORT).toBeDefined();
   });
+  it("a per-bee minHoldMinutes overrides the 24h commitment", () => {
+    const s = coin("PENGU");
+    const v = view([s]);
+    const c = ctx("boozy", bee("boozy", { position: position(s, { openedAt: NOW - 7 * 60 * 60_000 }), flatSince: null }), v);
+    expect(boozy.menu(c).BAIL).toBeUndefined();
+    expect(boozy.menu({ ...c, knobs: { ...c.knobs, minHoldMinutes: 6 * 60 } }).BAIL).toBeDefined();
+    expect(boozy.menu({ ...c, knobs: { ...c.knobs, minHoldMinutes: 12 * 60 } }).BAIL).toBeUndefined();
+  });
+  it("a per-bee trailAtr widens or tightens the stop", () => {
+    const s = coin("PENGU");
+    const c = ctx("boozy", bee("boozy", { position: position(s), flatSince: null }), view([s]));
+    const dist = (k?: number) => s.mid - boozy.trail!({ ...c, knobs: { ...c.knobs, trailAtr: k } })!;
+    expect(dist(2)).toBeCloseTo((dist() * 2) / 3);
+    expect(dist(4)).toBeCloseTo((dist() * 4) / 3);
+    expect(s.mid - boozy.stopFor(s.instId, "long", s.mid, { ...c, knobs: { ...c.knobs, trailAtr: 4 } })!).toBeCloseTo(dist(4));
+  });
   it("DOUBLE_DOWN only after another 1 ATR(1h) run past the entry", () => {
     // atr14Pct 0.5 at price 100: 15m ATR = 0.5, so ATR(1h) ~ 1.0
     const s = coin("PENGU", {}, 100);
