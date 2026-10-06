@@ -158,6 +158,41 @@ describe("beekeeper: schedule", () => {
     expect(await off.keeper.start("manual")).toBeNull();
   });
 
+  it("a round the owner starts by hand restarts the clock", async () => {
+    const r = rig();
+    r.keeper.tick();
+    r.clock.now += 61_000;
+    r.keeper.tick();
+    await Promise.resolve();
+    expect(r.hooks.length).toBe(1);
+    r.clock.now += 3 * HOUR;
+    await r.keeper.start("manual");
+    expect(r.keeper.nextRoundAt()).toBe(r.clock.now + 4 * HOUR);
+    r.clock.now += HOUR + 60_000; // where the old schedule would have fired
+    r.keeper.tick();
+    await Promise.resolve();
+    expect(r.hooks.length).toBe(2);
+  });
+
+  it("switched off: the clock keeps counting but no scheduled or alert round starts; a manual one still does", async () => {
+    const r = rig();
+    r.config.paused = true;
+    expect(r.keeper.publicState()).toMatchObject({ on: true, paused: true });
+    expect(typeof r.keeper.nextRoundAt()).toBe("number");
+    r.clock.now += 10 * HOUR;
+    r.keeper.tick();
+    r.keeper.onAlert("Zip (bee3): daily loss stop");
+    await Promise.resolve();
+    expect(r.hooks.length).toBe(0);
+    expect(await r.keeper.start("manual")).not.toBeNull();
+    expect(r.hooks.length).toBe(1);
+    r.config.paused = false;
+    r.clock.now += 4 * HOUR + 1;
+    r.keeper.tick();
+    await Promise.resolve();
+    expect(r.hooks.length).toBe(2);
+  });
+
   it("connecting later takes effect without a restart; disconnecting kills every key in flight", async () => {
     const r = rig({ hook: false });
     expect(r.keeper.enabled).toBe(false);
@@ -387,7 +422,7 @@ describe("beekeeper: review hardening", () => {
     await new Promise((res) => setImmediate(res));
     // a database that is gone costs the dashboard its card, never the /snapshot answer
     r.db.close();
-    expect(r.keeper.publicState()).toEqual({ on: false, nextRoundAt: null, everyHours: 4, rounds: 0, rewrites: 0, lockedUntil: {}, entries: [] });
+    expect(r.keeper.publicState()).toEqual({ on: false, paused: false, nextRoundAt: null, everyHours: 4, rounds: 0, rewrites: 0, lockedUntil: {}, entries: [] });
     expect(() => r.keeper.tick()).not.toThrow();
     expect(await r.keeper.start("manual")).toBeNull();
   });
@@ -550,7 +585,7 @@ describe("beekeeper: what is public", () => {
       expect(JSON.stringify(redact(card))).toBe(JSON.stringify(card));
       expect(snap.keeper).toMatchObject({ on: true, rounds: 2, rewrites: 1 });
       // exactly the private engine's block: nothing else rides along
-      expect(Object.keys(snap.keeper).sort()).toEqual(["entries", "everyHours", "lockedUntil", "nextRoundAt", "on", "rewrites", "rounds"]);
+      expect(Object.keys(snap.keeper).sort()).toEqual(["entries", "everyHours", "lockedUntil", "nextRoundAt", "on", "paused", "rewrites", "rounds"]);
     } finally {
       srv.close();
     }

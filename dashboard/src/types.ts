@@ -80,6 +80,8 @@ export interface KeeperEntry {
 export interface KeeperState {
   /** false: no Zap is connected (the card shows the "Connect the Beekeeper" form). */
   on: boolean;
+  /** Connected, but switched off by the owner: no rounds on the timer. Older engines leave it out. */
+  paused?: boolean;
   nextRoundAt: number | null;
   everyHours: number;
   rounds: number;

@@ -184,6 +184,17 @@ describe("beekeeper routes: connect and disconnect", () => {
     expect(r.settings.config).toMatchObject({ hookUrl: "https://example.org/my-own-hook", publicUrl: "https://bees.example.com:8443" });
   });
 
+  it("the on/off switch is saved in keeper.json and shows in the snapshot", async () => {
+    const r = await rig();
+    await r.post("/keeper/connect", { hookUrl: HOOK, publicUrl: PUBLIC });
+    const off = await r.post("/keeper/pause", { paused: true });
+    expect(off.status).toBe(200);
+    expect(off.body.keeper).toMatchObject({ on: true, paused: true });
+    expect(JSON.parse(readFileSync(r.path, "utf8"))).toEqual({ hookUrl: HOOK, publicUrl: PUBLIC, paused: true });
+    expect((await r.post("/keeper/pause", { paused: "yes" })).status).toBe(400);
+    expect((await r.post("/keeper/pause", { paused: false })).body.keeper).toMatchObject({ paused: false });
+  });
+
   it("disconnect stops the rounds and kills the key in flight, but leaves a rewrite in place", async () => {
     const r = await rig();
     await r.post("/keeper/connect", { hookUrl: HOOK, publicUrl: PUBLIC });
@@ -209,9 +220,9 @@ describe("beekeeper routes: connect and disconnect", () => {
   it("settings in the environment win over the file, and the dashboard cannot change them", async () => {
     const dir = mkdtempSync(join(tmpdir(), "bees-keeper-"));
     writeFileSync(keeperPath(join(dir, "settings.json")), JSON.stringify({ hookUrl: "https://example.org/from-file", publicUrl: "http://203.0.113.9", everyHours: 6, rampStart: "2026-10-02T13:00:00Z" }));
-    expect(new KeeperSettings(keeperPath(join(dir, "settings.json"))).config).toEqual({ hookUrl: "https://example.org/from-file", publicUrl: "http://203.0.113.9", everyHours: 6, rampStart: Date.parse("2026-10-02T13:00:00Z") });
+    expect(new KeeperSettings(keeperPath(join(dir, "settings.json"))).config).toEqual({ hookUrl: "https://example.org/from-file", publicUrl: "http://203.0.113.9", everyHours: 6, paused: true, rampStart: Date.parse("2026-10-02T13:00:00Z") });
     const r = await rig({ dir, env: { hookUrl: HOOK, publicUrl: "https://bees.example.com", everyHours: 2, rampStart: "2026-10-03T00:00:00Z" } });
-    expect(r.settings.config).toEqual({ hookUrl: HOOK, publicUrl: "https://bees.example.com", everyHours: 2, rampStart: Date.parse("2026-10-03T00:00:00Z") });
+    expect(r.settings.config).toEqual({ hookUrl: HOOK, publicUrl: "https://bees.example.com", everyHours: 2, paused: true, rampStart: Date.parse("2026-10-03T00:00:00Z") });
     expect((await r.post("/keeper/connect", { hookUrl: "https://example.org/other", publicUrl: PUBLIC })).status).toBe(409);
     expect((await r.post("/keeper/disconnect")).status).toBe(409);
     expect(r.settings.config.hookUrl).toBe(HOOK);
@@ -226,7 +237,7 @@ describe("beekeeper routes: connect and disconnect", () => {
     const dir = mkdtempSync(join(tmpdir(), "bees-keeper-"));
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     writeFileSync(keeperPath(join(dir, "settings.json")), "{nope");
-    expect(new KeeperSettings(keeperPath(join(dir, "settings.json"))).config).toEqual({ hookUrl: undefined, publicUrl: undefined, everyHours: 4, rampStart: undefined });
+    expect(new KeeperSettings(keeperPath(join(dir, "settings.json"))).config).toEqual({ hookUrl: undefined, publicUrl: undefined, everyHours: 4, paused: true, rampStart: undefined });
     writeFileSync(keeperPath(join(dir, "settings.json")), JSON.stringify({ hookUrl: "http://plain.example/hook", publicUrl: "http://203.0.113.9/path" }));
     expect(new KeeperSettings(keeperPath(join(dir, "settings.json"))).config).toMatchObject({ hookUrl: undefined, publicUrl: undefined });
   });

@@ -73,10 +73,10 @@ export function undoable(entries: KeeperEntry[]): Set<number> {
   return live;
 }
 
-type OwnerAction = { kind: "round" } | { kind: "disconnect" } | { kind: "undo"; bee: BeeName };
+type OwnerAction = { kind: "round" } | { kind: "pause"; paused: boolean } | { kind: "undo"; bee: BeeName };
 const ACTION: Record<OwnerAction["kind"], { path: string; go: string; busy: string }> = {
   round: { path: "/keeper/round", go: "Call him now", busy: "Calling…" },
-  disconnect: { path: "/keeper/disconnect", go: "Disconnect", busy: "Disconnecting…" },
+  pause: { path: "/keeper/pause", go: "Confirm", busy: "Saving…" },
   undo: { path: "/keeper/rollback", go: "Undo", busy: "Undoing…" },
 };
 
@@ -97,7 +97,7 @@ export function Beekeeper({ keeper }: { keeper: KeeperState | undefined }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const ahead = mine && Date.now() - mine.at < 6000 && (!keeper || mine.state.on !== keeper.on || (mine.state.entries[0]?.id ?? 0) > (keeper.entries[0]?.id ?? 0));
+  const ahead = mine && Date.now() - mine.at < 6000 && (!keeper || mine.state.on !== keeper.on || !!mine.state.paused !== !!keeper.paused || (mine.state.entries[0]?.id ?? 0) > (keeper.entries[0]?.id ?? 0));
   const k = ahead ? mine.state : keeper;
   // An engine from before the Beekeeper has no such block: no card.
   if (!k) return null;
@@ -107,6 +107,7 @@ export function Beekeeper({ keeper }: { keeper: KeeperState | undefined }) {
   const fresh = latest && latest.action === "rewrote" && Date.now() - latest.at < 15_000;
   const canUndo = undoable(entries);
   const passwordOk = password.length >= 8;
+  const paused = !!k.paused;
 
   const run = async (path: string, body: unknown) => {
     setBusy(true);
@@ -128,7 +129,7 @@ export function Beekeeper({ keeper }: { keeper: KeeperState | undefined }) {
   };
   const confirm = (e: FormEvent) => {
     e.preventDefault();
-    if (pending && passwordOk && !busy) void run(ACTION[pending.kind].path, pending.kind === "undo" ? { bee: pending.bee } : {});
+    if (pending && passwordOk && !busy) void run(ACTION[pending.kind].path, pending.kind === "undo" ? { bee: pending.bee } : pending.kind === "pause" ? { paused: pending.paused } : {});
   };
   const ask = (a: OwnerAction) => {
     setError("");
@@ -152,8 +153,8 @@ export function Beekeeper({ keeper }: { keeper: KeeperState | undefined }) {
           </span>
         </div>
         {k.on && k.nextRoundAt !== null && (
-          <div className="keeper-next num">
-            <span className="dim">next round</span>
+          <div className={`keeper-next num ${paused ? "keeper-paused" : ""}`} title={paused ? "Switched off: the timer keeps counting, but no round starts until he is switched back on" : undefined}>
+            <span className="dim">{paused ? "off · next round" : "next round"}</span>
             <b>{latest?.action === "calling" ? "now" : until(k.nextRoundAt)}</b>
           </div>
         )}
@@ -219,19 +220,35 @@ export function Beekeeper({ keeper }: { keeper: KeeperState | undefined }) {
           <button type="button" className="keeper-link" onClick={() => ask({ kind: "round" })}>
             Call him now
           </button>
-          <button type="button" className="keeper-link" onClick={() => ask({ kind: "disconnect" })}>
-            Disconnect
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!paused}
+            className={`keeper-switch ${paused ? "" : "on"}`}
+            title={paused ? "Off: no rounds on the timer. Click to switch him on (owner password)" : "On: rounds run on the timer. Click to switch him off (owner password)"}
+            onClick={() => ask({ kind: "pause", paused: !paused })}
+          >
+            <span className="keeper-switch-track" aria-hidden="true">
+              <span className="keeper-switch-knob" />
+            </span>
+            {paused ? "Off" : "On"}
           </button>
         </div>
       )}
       {pending && (
         <form className="keeper-confirm" onSubmit={confirm}>
           <span className="keeper-confirm-what">
-            {pending.kind === "undo" ? `Undo the Beekeeper's latest rewrite of ${BEE_META[pending.bee].short}?` : pending.kind === "round" ? "Start a round now?" : "Disconnect the Beekeeper? Rewrites stay until you undo them."}
+            {pending.kind === "undo"
+              ? `Undo the Beekeeper's latest rewrite of ${BEE_META[pending.bee].short}?`
+              : pending.kind === "round"
+                ? "Start a round now? The next scheduled round is counted from this one."
+                : pending.paused
+                  ? "Switch the Beekeeper off? No rounds run until you switch him back on. Rewrites stay."
+                  : "Switch the Beekeeper back on?"}
           </span>
           <div className="keeper-form-row">
             <input className="keeper-input" type="password" autoComplete="current-password" placeholder="Owner password" aria-label="Owner password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
-            <button type="submit" className={`keeper-go ${pending.kind === "round" ? "" : "danger"}`} disabled={busy || !passwordOk}>
+            <button type="submit" className={`keeper-go ${pending.kind === "undo" || (pending.kind === "pause" && pending.paused) ? "danger" : ""}`} disabled={busy || !passwordOk}>
               {busy ? ACTION[pending.kind].busy : ACTION[pending.kind].go}
             </button>
             <button type="button" className="keeper-link" onClick={() => setPending(null)}>

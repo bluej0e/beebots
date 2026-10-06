@@ -5,7 +5,8 @@
 //   GET  /keeper/scorecard    public: what the Zap reads before a round (data that is public already, 10 s cache)
 //   POST /keeper/connect      owner password: { hookUrl, publicUrl }, takes effect without a restart
 //   POST /keeper/disconnect   owner password: no more rounds (rewrites already made stay until undone)
-//   POST /keeper/round        owner password: start a round now
+//   POST /keeper/round        owner password: start a round now (the next scheduled one is counted from it)
+//   POST /keeper/pause        owner password: { paused }, switch the scheduled and alert rounds off or back on
 //   POST /keeper/rollback     owner password: { bee }, undo the Beekeeper's latest rewrite of that bee
 // The hook URL is a secret (anyone who has it can start the owner's Zap): it is never served and never logged.
 import { existsSync, readFileSync } from "node:fs";
@@ -28,6 +29,7 @@ const FileSchema = z.object({
   hookUrl: z.string().optional(),
   publicUrl: z.string().optional(),
   everyHours: z.number().min(0.25).optional(),
+  paused: z.boolean().optional(),
   rampStart: z.union([z.string(), z.number()]).optional(),
 });
 /** keeper.json. */
@@ -98,6 +100,8 @@ export class KeeperSettings {
       hookUrl: this.env.hookUrl ?? this.file.hookUrl,
       publicUrl: this.env.publicUrl ?? this.file.publicUrl,
       everyHours: this.env.everyHours ?? this.file.everyHours ?? KEEPER_DEFAULT_EVERY_HOURS,
+      // Off until the owner switches it on from the dashboard (an explicit "paused": false in keeper.json).
+      paused: this.file.paused ?? true,
       rampStart: parseRampStart(this.env.rampStart ?? this.file.rampStart),
     };
   }
@@ -122,6 +126,12 @@ export class KeeperSettings {
     this.current = this.resolve();
   }
 
+  setPaused(paused: boolean): void {
+    this.file = { ...this.file, paused };
+    writePrivateJson(this.path, this.file);
+    this.current = this.resolve();
+  }
+
   disconnect(): void {
     const rest = { ...this.file };
     delete rest.hookUrl;
@@ -132,6 +142,7 @@ export class KeeperSettings {
 }
 
 const ConnectReq = z.object({ hookUrl: z.string().max(500), publicUrl: z.string().max(200).optional() }).strict();
+const PauseReq = z.object({ paused: z.boolean() }).strict();
 const RollbackReq = z.object({ bee: z.enum(BEES) }).strict();
 
 export interface KeeperHttpDeps {
@@ -144,7 +155,7 @@ export interface KeeperHttpDeps {
   now?: () => number;
 }
 
-const OWNER_ROUTES = new Set(["/keeper/connect", "/keeper/disconnect", "/keeper/round", "/keeper/rollback"]);
+const OWNER_ROUTES = new Set(["/keeper/connect", "/keeper/disconnect", "/keeper/round", "/keeper/pause", "/keeper/rollback"]);
 
 export class KeeperHttp {
   private scorecardCache: { at: number; body: string } | null = null;
@@ -229,6 +240,13 @@ export class KeeperHttp {
       keeper.reconfigured();
       this.scorecardCache = null;
       log.info("beekeeper disconnected from the dashboard");
+      return done();
+    }
+    if (path === "/keeper/pause") {
+      const p = PauseReq.safeParse(body);
+      if (!p.success) return this.reply(res, 400, { error: "bad request" });
+      settings.setPaused(p.data.paused);
+      log.info(p.data.paused ? "beekeeper switched off from the dashboard" : "beekeeper switched on from the dashboard");
       return done();
     }
     if (path === "/keeper/round") {

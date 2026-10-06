@@ -51,6 +51,8 @@ export interface KeeperEntry {
 /** The `keeper` block of /snapshot. */
 export interface KeeperState {
   on: boolean;
+  /** Connected but switched off by the owner: no scheduled or alert rounds until switched back on. */
+  paused: boolean;
   nextRoundAt: number | null;
   everyHours: number;
   rounds: number;
@@ -230,6 +232,8 @@ export interface KeeperConfig {
   publicUrl?: string;
   /** Hours between rounds once the ramp (if any) is over. */
   everyHours: number;
+  /** Switched off from the dashboard: the schedule and alerts start no rounds (a manual round still does). */
+  paused?: boolean;
   /** Start of the ramp-up (ms), or undefined for the steady interval from the start. */
   rampStart?: number;
 }
@@ -306,7 +310,8 @@ export class Keeper {
 
   nextRoundAt(): number | null {
     if (!this.enabled || this.d.closed?.()) return null;
-    const last = this.d.db.raw.prepare(`SELECT ts, status FROM keeper_rounds WHERE source = 'schedule' ORDER BY id DESC LIMIT 1`).get() as { ts: number; status: string } | undefined;
+    // A round the owner started by hand restarts the clock, exactly like a scheduled one.
+    const last = this.d.db.raw.prepare(`SELECT ts, status FROM keeper_rounds WHERE source IN ('schedule', 'manual') ORDER BY id DESC LIMIT 1`).get() as { ts: number; status: string } | undefined;
     // First ever round: a minute after the hook is connected, so the owner sees something straight away.
     if (!last) return (this.bootAt ??= this.now()) + 60_000;
     if (last.status === "failed") return last.ts + KEEPER_RETRY_MS;
@@ -353,6 +358,7 @@ export class Keeper {
       for (const [id, k] of this.keys) if (k.exp < now) this.keys.delete(id);
       const stale = this.d.db.raw.prepare(`SELECT id FROM keeper_rounds WHERE status = 'calling' AND ts < ?`).all(now - KEEPER_ROUND_TIMEOUT_MS) as Array<{ id: number }>;
       for (const r of stale) this.settle(r.id, "quiet", "no rewrite arrived");
+      if (this.d.config().paused) return;
       const due = this.nextRoundAt();
       if (due === null || now < due) return;
       // One round at a time: wait out a round that is running or only just ran (an alert round, a manual one).
@@ -371,7 +377,7 @@ export class Keeper {
   /** A bee was sent home or retired: worth a look now, unless a round ran in the last half hour. Never throws. */
   onAlert(text: string): void {
     try {
-      if (!this.enabled || this.d.closed?.()) return;
+      if (!this.enabled || this.d.config().paused || this.d.closed?.()) return;
       const last = this.lastRoundAt();
       if (last !== null && this.now() - last < KEEPER_ALERT_GAP_MS) return;
       void this.start("alert", text);
@@ -508,6 +514,7 @@ export class Keeper {
       const counts = this.d.db.raw.prepare(`SELECT COUNT(*) AS rounds, COALESCE(SUM(status = 'rewrote'), 0) AS rewrites FROM keeper_rounds`).get() as { rounds: number; rewrites: number };
       return {
         on: this.enabled,
+        paused: !!this.d.config().paused,
         nextRoundAt: this.nextRoundAt(),
         everyHours: this.everyHours(now),
         rounds: counts.rounds,
@@ -522,7 +529,7 @@ export class Keeper {
       };
     } catch (err) {
       log.warn("beekeeper state not read", { err: safeError(err) });
-      return { on: false, nextRoundAt: null, everyHours: KEEPER_DEFAULT_EVERY_HOURS, rounds: 0, rewrites: 0, lockedUntil: {}, entries: [] };
+      return { on: false, paused: false, nextRoundAt: null, everyHours: KEEPER_DEFAULT_EVERY_HOURS, rounds: 0, rewrites: 0, lockedUntil: {}, entries: [] };
     }
   }
 

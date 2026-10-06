@@ -109,7 +109,7 @@ After an undo, the Beekeeper leaves that bee alone for 20 hours.
 
 Two more things to know:
 
-- **Disconnect** stops the rounds. It does not undo anything. Rewrites stay until you undo them.
+- **Switching him off** stops the rounds. It does not undo anything. Rewrites stay until you undo them.
 - **Running Setup again** drops every rewrite from before. Your new rules stand.
 
 The same undo from a terminal, if you prefer (the password goes in a header, URL-encoded):
@@ -127,8 +127,14 @@ Bees are `bee1`, `bee2` and `bee3`, left to right on your dashboard.
 
 When the Beekeeper is connected, the card has two more controls. Both need your owner password.
 
-- **Call him now** starts a round straight away. It costs the same tasks as any round.
-- **Disconnect** stops the rounds and forgets the hook URL.
+- **Call him now** starts a round straight away. It costs the same tasks as any round. The timer restarts from it:
+  the next scheduled round comes a full interval later.
+- **The On/Off switch** pauses him. He starts **off**: connecting him does not start any rounds until you switch him on. While he is off, the timer keeps counting but no round starts, not even after
+  a bee is sent home. **Call him now** still works. Switch him back on and the schedule carries on (if a round
+  came due while he was off, it starts straight away). The setting is saved in `keeper.json`.
+
+To forget the hook URL entirely (to connect a different one), call `POST /keeper/disconnect` from a terminal, the
+same way as the undo above.
 
 Eight wrong passwords lock every owner control for 15 minutes.
 
@@ -165,7 +171,7 @@ He tries again next round.
 
 **Every round says "Left them alone".** Usually that is the right call. If it never changes, open the Zap's run
 history. If step 2 fails, Zapier cannot reach your server. Open your dashboard on its public address, then
-Disconnect and Connect again.
+disconnect (`POST /keeper/disconnect`) and Connect again.
 
 **"Zapier cannot reach this address" when you connect.** You opened the dashboard on a local address, like
 `localhost`. Open it on your server's IP or domain and connect from there.
@@ -201,7 +207,8 @@ two code steps, the prompt for Opus 5.5, and the questions for Jev.
 | `POST /lab/overlay` | the Zap, with a round's key | Delivers one rewrite: rules text and coins for one bee. |
 | `POST /keeper/connect` | you (owner password) | Connects the Zap: `{ "hookUrl": "...", "publicUrl": "..." }`. |
 | `POST /keeper/disconnect` | you (owner password) | Stops the rounds. |
-| `POST /keeper/round` | you (owner password) | Starts a round now. |
+| `POST /keeper/round` | you (owner password) | Starts a round now. The next scheduled round counts from it. |
+| `POST /keeper/pause` | you (owner password) | Switches him off or on: `{ "paused": true }`. |
 | `POST /keeper/rollback` | you (owner password) | Undoes the latest rewrite of one bee: `{ "bee": "bee2" }`. |
 
 The Beekeeper is a game mechanic, not a signal service. **Not financial advice.**

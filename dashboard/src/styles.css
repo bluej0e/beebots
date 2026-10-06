@@ -1878,6 +1878,49 @@ textarea.setup-input {
 .keeper-undo:hover {
   color: var(--text);
 }
+.keeper-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.keeper-switch:hover {
+  color: var(--text);
+}
+.keeper-switch-track {
+  position: relative;
+  width: 1.9rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.4);
+  transition: background 0.15s;
+}
+.keeper-switch-knob {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+.keeper-switch.on .keeper-switch-track {
+  background: var(--good);
+}
+.keeper-switch.on .keeper-switch-knob {
+  transform: translateX(0.85rem);
+}
+.keeper-paused b {
+  opacity: 0.5;
+}
 /* a rewrite a bee is still trading on never scrolls out of the card: its Undo has to stay in reach */
 .keeper-log .keeper-row.keeper-live {
   display: grid;
