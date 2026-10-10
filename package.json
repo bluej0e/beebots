@@ -2,7 +2,7 @@
   "name": "beebots",
   "version": "2026.10.2",
   "private": true,
-  "description": "Three AI trading bees on OKX EEA X-Perps, every decision made by Jev",
+  "description": "An evolving colony of AI trading bees on OKX EEA X-Perps (paper): royals trade the best DNA, workers breed and die",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -17,8 +17,11 @@
     ]
   },
   "scripts": {
-    "dev": "DB_PATH=./data/bees-{mode}.sqlite tsx --env-file-if-exists=.env src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "ENGINE_PORT=8099 COLONY_DB=./data/colony-local/colony-{mode}.sqlite tsx src/colony/main.ts",
+    "start": "node dist/colony/main.js",
+    "dev:classic": "DB_PATH=./data/bees-{mode}.sqlite tsx --env-file-if-exists=.env src/index.ts",
+    "start:classic": "node dist/index.js",
+    "market-proxy": "node dist/market-proxy.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
