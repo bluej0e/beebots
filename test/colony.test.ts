@@ -248,3 +248,25 @@ describe("colony", () => {
     expect(colony.nextRatingAt()).toBe(T0 + 8 * HOUR);
   });
 });
+
+describe("bee detail", () => {
+  it("shows Jev's last real call with every option, the decisions that mattered, the 24h tally and trades", async () => {
+    const { beeDetail } = await import("../src/colony/view.js");
+    const db = new Db(":memory:");
+    const colony = new Colony(db, null, DEFAULT_OPTS, seeded(1), () => Date.now());
+    const base = { stateHash: "h", menuJson: '["RIDE","BAIL","SWITCH_COIN"]', inputTokens: 300, jevError: null, vetoedBy: null, forcedBy: null };
+    const now = Date.now();
+    db.insertDecision({ ...base, bee: "queen", ts: now - 60_000, stateJson: '{"utc":"12:00","coins":{"cols":["r7d_pct"],"rows":{"TIA":[12]}}}', choice: "BAIL", probabilities: { RIDE: 0.3, BAIL: 0.6, SWITCH_COIN: 0.1 }, confidence: 0.8, conviction: 2.2, latencyMs: 400, jevCostUsd: 0.00001, action: { kind: "close", reason: "bail" }, status: "BAIL" });
+    // A rules-only hold (no Jev call, nothing happened): not in the feed, but counted in the tally.
+    db.insertDecision({ ...base, bee: "queen", ts: now, stateJson: "{}", choice: "RIDE", probabilities: { RIDE: 1 }, confidence: 1, conviction: 0, latencyMs: 0, jevCostUsd: 0, action: { kind: "none" }, status: "RIDE: required by rules" });
+    const d = beeDetail(db, colony, "queen")!;
+    expect(d.lastCall!.choice).toBe("BAIL");
+    expect(d.lastCall!.options.map((o) => o.label)).toEqual(["BAIL", "RIDE", "SWITCH_COIN"]);
+    expect(d.lastCall!.conviction).toBe("wasted");
+    expect(d.lastCall!.saw.coins).toEqual({ cols: ["r7d_pct"], rows: { TIA: [12] } });
+    expect(d.recent).toHaveLength(1);
+    expect(d.tally).toEqual(expect.arrayContaining([{ label: "BAIL", n: 1 }, { label: "RIDE", n: 1 }]));
+    expect(d.jev.calls).toBe(1);
+    expect(beeDetail(db, colony, "nobody")).toBeUndefined();
+  });
+});

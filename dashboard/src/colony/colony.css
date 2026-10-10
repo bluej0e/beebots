@@ -893,3 +893,158 @@ table.dna tr.changed td:nth-child(2) {
   background: var(--card-2);
   line-height: 1.45;
 }
+
+/* ---------- inside a bee ---------- */
+.drawer.wide {
+  width: min(36rem, 100%);
+}
+.sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.pos-detail {
+  background: var(--card-2);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+}
+.opts,
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+.opt,
+.tally-row {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 9rem) 1fr 3rem;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.opt-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+.opt.chosen .opt-label {
+  color: var(--text);
+  font-weight: 700;
+}
+.opt-track {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--card-2);
+  overflow: hidden;
+}
+.opt-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #3a3946;
+}
+.tally .opt-fill {
+  background: var(--violet);
+  opacity: 0.6;
+}
+.opt-p {
+  text-align: right;
+  font-size: 0.78rem;
+}
+.call-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  color: var(--text-2);
+}
+.veto {
+  color: var(--star);
+}
+.forced-by {
+  color: var(--magenta);
+}
+.jev-stats {
+  margin-top: 0.2rem;
+}
+.saw summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--violet);
+}
+.saw-me {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  margin: 0.4rem 0;
+}
+.saw-scroll {
+  overflow-x: auto;
+}
+.saw-table,
+.trades {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.saw-table th {
+  text-align: right;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.2rem 0.3rem;
+  white-space: nowrap;
+}
+.saw-table th:first-child,
+.saw-table td:first-child {
+  text-align: left;
+  font-weight: 700;
+}
+.saw-table td,
+.trades td {
+  padding: 0.2rem 0.3rem;
+  border-top: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+.trades td:nth-child(2),
+.trades td:nth-child(3) {
+  text-align: left;
+}
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.feed li {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  padding-left: 0.4rem;
+  border-left: 2px solid transparent;
+}
+.feed li.acted {
+  border-left-color: var(--good-text);
+}
+.feed li.vetoed {
+  border-left-color: var(--star);
+}
+.feed li.forced {
+  border-left-color: var(--magenta);
+}
+.feed-main b {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.feed-act {
+  color: var(--good-text);
+}

@@ -40,8 +40,8 @@ export interface ServerDeps {
   profile: () => unknown;
   /** File path of a bee's generated portrait, or null. */
   beeImage: (bee: string) => string | null;
-  /** Extra read-only JSON routes (the colony's /colony). */
-  routes?: Record<string, () => unknown>;
+  /** Extra read-only JSON routes (the colony's /colony/*). Returning undefined means 404. */
+  routes?: Record<string, (url: URL) => unknown>;
 }
 
 const MAX_BUFFERED = 1024 * 1024;
@@ -106,7 +106,10 @@ export function startServer(deps: ServerDeps, port: number, bind: string): Serve
     }
 
     const extra = deps.routes?.[url.pathname];
-    if (extra) return json(res, 200, extra());
+    if (extra) {
+      const body = extra(url);
+      return body === undefined ? json(res, 404, { error: "not found" }) : json(res, 200, body);
+    }
 
     switch (url.pathname) {
       case "/health": {

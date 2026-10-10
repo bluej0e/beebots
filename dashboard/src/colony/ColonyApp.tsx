@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { BeeDetail } from "./BeeDetail";
 import { DnaGlyph, GeneStrip, Radar, hue, type RadarSeries } from "./dna";
 import { ORAKELIA, type Bee, type ColonyView, type GeneSpec, type RoundScore } from "./types";
 
@@ -424,7 +425,7 @@ function Drawer({ b, view, onClose, onOpen }: { b: Bee; view: ColonyView; onClos
 
   return (
     <div className="drawer-wrap" onClick={onClose}>
-      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+      <aside className={`drawer ${b.tier === "royal" ? "wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <button className="drawer-close" onClick={onClose} aria-label="close">
           ×
         </button>
@@ -465,7 +466,7 @@ function Drawer({ b, view, onClose, onOpen }: { b: Bee; view: ColonyView; onClos
           </div>
           <div>
             <span className="eyebrow">Jev spend</span>
-            <span className="num">{b.live ? `$${b.live.totals.jevUsd.toFixed(3)}` : b.genome.useJev ? "—" : "none"}</span>
+            <span className="num">{b.live ? `$${b.live.totals.jevUsd.toFixed(4)}` : b.genome.useJev ? "—" : "none"}</span>
           </div>
         </div>
         {b.death && (
@@ -473,7 +474,7 @@ function Drawer({ b, view, onClose, onOpen }: { b: Bee; view: ColonyView; onClos
             Died {ago(b.diedAt!, view.ts)}: {b.death}
           </p>
         )}
-        {b.live?.last && <p className="dim small">Last move: {b.live.last.status}</p>}
+        {b.tier !== "egg" && <BeeDetail bee={b} color={beeColor(b)} />}
         <div className="drawer-section">
           <span className="eyebrow">Gene strip</span>
           <GeneStrip genome={b.genome} parent={parentGenome ?? ORAKELIA} genes={view.genes} />

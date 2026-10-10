@@ -33,7 +33,7 @@ import { BREEZY_COINS } from "../bees/breezy.js";
 import { Colony, DEFAULT_OPTS, type ColonyOpts } from "./colony.js";
 import { GENES } from "./genome.js";
 import { claudeAdvisor } from "./advisor.js";
-import { colonyView } from "./view.js";
+import { beeDetail, colonyView } from "./view.js";
 
 function opts(env: NodeJS.ProcessEnv): ColonyOpts {
   const n = (k: string, d: number, min: number) => {
@@ -103,7 +103,10 @@ async function main() {
       engine: { bus, db, visitors: new Visitors(db), snapshot: () => engine!.snapshot(), health: () => engine!.health() },
       profile: () => ({ setup: false, mode: cfg.mode, links: cfg.links, colony: true, bees: [] }),
       beeImage: () => null,
-      routes: { "/colony/state": () => colonyView(colony, engine!.snapshot(), engine!.health()) },
+      routes: {
+        "/colony/state": () => colonyView(colony, engine!.snapshot(), engine!.health()),
+        "/colony/bee": (url) => beeDetail(db, colony, url.searchParams.get("id") ?? ""),
+      },
     },
     cfg.server.port,
     cfg.server.bind,
