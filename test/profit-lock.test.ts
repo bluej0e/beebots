@@ -51,36 +51,36 @@ async function harness(px: number, answer = "NOT_ON_MENU") {
 describe("engine: boozy's profit lock", () => {
   it("a +6% run locks 65% of it; the lock holds as the price fades, then the stop sells", async () => {
     const h = await harness(106);
-    h.engine.bees.bee3.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
-    h.engine.bees.bee3.flatSince = null;
+    h.engine.bees.bee3!.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
+    h.engine.bees.bee3!.flatSince = null;
     await h.engine.tick();
-    const p = h.engine.bees.bee3.position!;
+    const p = h.engine.bees.bee3!.position!;
     expect(p.peakPx).toBe(106);
     expect(p.stopPx!).toBeCloseTo(103.9, 6);
     h.setPx(104.5); // fades, still above the lock
     await h.engine.tick();
-    expect(h.engine.bees.bee3.position?.stopPx).toBeCloseTo(103.9, 6);
+    expect(h.engine.bees.bee3!.position?.stopPx).toBeCloseTo(103.9, 6);
     h.setPx(103.5); // through the lock: code sells, still in profit
     await h.engine.tick();
-    expect(h.engine.bees.bee3.position).toBeNull();
+    expect(h.engine.bees.bee3!.position).toBeNull();
   });
 
   it("does nothing below +2.5%", async () => {
     const h = await harness(102);
-    h.engine.bees.bee3.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
-    h.engine.bees.bee3.flatSince = null;
+    h.engine.bees.bee3!.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
+    h.engine.bees.bee3!.flatSince = null;
     await h.engine.tick();
-    expect(h.engine.bees.bee3.position!.stopPx!).toBeLessThan(100);
+    expect(h.engine.bees.bee3!.position!.stopPx!).toBeLessThan(100);
   });
 });
 
 describe("engine: an add can't turn a winner into a loser", () => {
   it("after DOUBLE_DOWN the stop is at least the new average entry", async () => {
     const h = await harness(100, "DOUBLE_DOWN");
-    h.engine.bees.bee3.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 3, entryPx: 98.9, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
-    h.engine.bees.bee3.flatSince = null;
+    h.engine.bees.bee3!.position = { instId: h.instId, coin: "ENA", side: "long", contracts: 3, entryPx: 98.9, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
+    h.engine.bees.bee3!.flatSince = null;
     await h.engine.tick();
-    const p = h.engine.bees.bee3.position!;
+    const p = h.engine.bees.bee3!.position!;
     expect(p.contracts).toBeGreaterThan(3); // the add filled
     expect(p.entryPx).toBeGreaterThan(98.9);
     expect(p.stopPx!).toBeGreaterThanOrEqual(p.entryPx - 1e-9);

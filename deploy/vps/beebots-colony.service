@@ -1,0 +1,17 @@
+# /etc/systemd/system/beebots-colony.service: the Colony engine (src/colony/main.ts), paper only.
+[Unit]
+Description=beebots colony engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/beebots
+EnvironmentFile=/opt/beebots/data/colony/engine.env
+ExecStart=/usr/bin/node --max-old-space-size=256 dist/colony/main.js
+Restart=always
+RestartSec=10
+MemoryMax=420M
+
+[Install]
+WantedBy=multi-user.target

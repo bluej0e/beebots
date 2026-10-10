@@ -40,6 +40,8 @@ export interface ServerDeps {
   profile: () => unknown;
   /** File path of a bee's generated portrait, or null. */
   beeImage: (bee: string) => string | null;
+  /** Extra read-only JSON routes (the colony's /colony). */
+  routes?: Record<string, () => unknown>;
 }
 
 const MAX_BUFFERED = 1024 * 1024;
@@ -102,6 +104,9 @@ export function startServer(deps: ServerDeps, port: number, bind: string): Serve
       if (url.pathname === "/health") return json(res, 200, { ok: true, setup: true });
       return json(res, 503, { error: "setup needed", setup: true });
     }
+
+    const extra = deps.routes?.[url.pathname];
+    if (extra) return json(res, 200, extra());
 
     switch (url.pathname) {
       case "/health": {

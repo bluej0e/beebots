@@ -202,9 +202,9 @@ async function main() {
         startedAt: snap.startedAt,
         startEquityUsd: snap.startEquityUsd,
         bees: snap.bees.map((b) => {
-          const s = cfg.slots[b.bee];
+          const s = cfg.slots[b.bee as (typeof BEES)[number]];
           // The rules the bee really trades on: the Beekeeper's while a rewrite is live, else the owner's.
-          const { rules, coins } = live(b.bee);
+          const { rules, coins } = live(b.bee as (typeof BEES)[number]);
           return { slot: b.bee, name: s.name, style: s.style, tagline: s.tagline, rules, coins, equityUsd: b.equityUsd, fundingUsd: b.totals.fundingUsd, cap: b.cap, tradesToday: b.tradesToday };
         }),
       };

@@ -104,38 +104,38 @@ describe("rules-only hold: Jev is not asked", () => {
 
   it("boozy inside his 24h lock (RIDE is the only move): no Jev call, the row says the rules decided", async () => {
     const h = await harness();
-    h.engine.bees.bee3.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
-    h.engine.bees.bee3.flatSince = null;
+    h.engine.bees.bee3!.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 10, initialStopPx: 90 };
+    h.engine.bees.bee3!.flatSince = null;
     h.calls.length = 0;
     await h.engine.tick();
     const asked = h.calls.map((c) => (JSON.parse(c) as { questions: { action: { instructions: string } } }).questions.action.instructions);
     expect(asked.some((i) => i.includes("You are boozy-bee"))).toBe(false);
     const row = h.events.find((e) => e.type === "decision" && e.bee === "bee3");
     expect(row).toMatchObject({ choice: "RIDE", required: true, jevUsd: 0 });
-    expect(h.engine.bees.bee3.position?.contracts).toBe(21);
+    expect(h.engine.bees.bee3!.position?.contracts).toBe(21);
   });
 
   it("an old position (no initialStopPx) is re-sized once from its entry stop; one already trailed past entry is left alone", async () => {
     const h = await harness();
     const ctVal = market().instruments.get(ena.instId)!.ctVal;
-    h.engine.bees.bee3.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 1 };
-    h.engine.bees.bee3.flatSince = null;
-    h.engine.bees.bee2.position = null;
+    h.engine.bees.bee3!.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 100, openedAt: NOW - 60 * 60_000, stopPx: 90, riskUsd: 1 };
+    h.engine.bees.bee3!.flatSince = null;
+    h.engine.bees.bee2!.position = null;
     await h.engine.tick();
-    expect(h.engine.bees.bee3.position).toMatchObject({ initialStopPx: 90 });
-    expect(h.engine.bees.bee3.position!.riskUsd).toBeCloseTo(21 * ctVal * 10, 6);
+    expect(h.engine.bees.bee3!.position).toMatchObject({ initialStopPx: 90 });
+    expect(h.engine.bees.bee3!.position!.riskUsd).toBeCloseTo(21 * ctVal * 10, 6);
 
     const g = await harness();
-    g.engine.bees.bee3.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 95, openedAt: NOW - 60 * 60_000, stopPx: 96, riskUsd: 7 };
-    g.engine.bees.bee3.flatSince = null;
+    g.engine.bees.bee3!.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 95, openedAt: NOW - 60 * 60_000, stopPx: 96, riskUsd: 7 };
+    g.engine.bees.bee3!.flatSince = null;
     await g.engine.tick();
-    expect(g.engine.bees.bee3.position).toMatchObject({ initialStopPx: null, riskUsd: 7 });
+    expect(g.engine.bees.bee3!.position).toMatchObject({ initialStopPx: null, riskUsd: 7 });
   });
 
   it("a stop still fires inside the lock", async () => {
     const h = await harness();
-    h.engine.bees.bee3.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 110, openedAt: NOW - 60 * 60_000, stopPx: 105, riskUsd: 10, initialStopPx: 105 };
-    h.engine.bees.bee3.flatSince = null;
+    h.engine.bees.bee3!.position = { instId: ena.instId, coin: "ENA", side: "long", contracts: 21, entryPx: 110, openedAt: NOW - 60 * 60_000, stopPx: 105, riskUsd: 10, initialStopPx: 105 };
+    h.engine.bees.bee3!.flatSince = null;
     await h.engine.tick();
     const row = h.events.find((e) => e.type === "decision" && e.bee === "bee3") as { forcedBy?: string; required?: boolean } | undefined;
     expect(row?.forcedBy).toBe("stop");

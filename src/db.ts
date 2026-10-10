@@ -2,7 +2,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { BeeId } from "./config.js";
 import type { BeeState } from "./bees/types.js";
 
 const SCHEMA = `
@@ -41,7 +40,7 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 `;
 
 export interface DecisionRow {
-  bee: BeeId;
+  bee: string;
   ts: number;
   stateHash: string | null;
   stateJson: string | null;
@@ -62,7 +61,7 @@ export interface DecisionRow {
 
 export interface OrderRow {
   decisionId: number;
-  bee: BeeId;
+  bee: string;
   ts: number;
   clOrdId: string;
   instId: string;
@@ -74,7 +73,7 @@ export interface OrderRow {
 
 export interface FillRow {
   orderId: number;
-  bee: BeeId;
+  bee: string;
   ts: number;
   instId: string;
   side: "buy" | "sell";
@@ -168,12 +167,12 @@ export class Db {
   }
 
   /** Returns false if this bill was already recorded. */
-  insertFunding(bee: BeeId, ts: number, instId: string | null, amountUsd: number, billId: string): boolean {
+  insertFunding(bee: string, ts: number, instId: string | null, amountUsd: number, billId: string): boolean {
     const r = this.raw.prepare(`INSERT OR IGNORE INTO funding (bee, ts, inst_id, amount_usd, bill_id) VALUES (?,?,?,?,?)`).run(bee, ts, instId, amountUsd, billId);
     return Number(r.changes) > 0;
   }
 
-  insertEquity(bee: BeeId, ts: number, equity: number, cash: number, upl: number): void {
+  insertEquity(bee: string, ts: number, equity: number, cash: number, upl: number): void {
     this.raw.prepare(`INSERT INTO equity_snapshots (bee, ts, equity_usd, cash_usd, upl_usd) VALUES (?,?,?,?,?)`).run(bee, ts, equity, cash, upl);
   }
 
@@ -189,11 +188,11 @@ export class Db {
     return out;
   }
 
-  insertRecon(bee: BeeId, ts: number, ok: boolean, diff: unknown): void {
+  insertRecon(bee: string, ts: number, ok: boolean, diff: unknown): void {
     this.raw.prepare(`INSERT INTO reconciliations (ts, bee, ok, diff_json) VALUES (?,?,?,?)`).run(ts, bee, ok ? 1 : 0, JSON.stringify(diff));
   }
 
-  insertCap(bee: BeeId, ts: number, cap: string, detail: string): void {
+  insertCap(bee: string, ts: number, cap: string, detail: string): void {
     this.raw.prepare(`INSERT INTO caps (ts, bee, cap, detail) VALUES (?,?,?,?)`).run(ts, bee, cap, detail);
   }
 
@@ -201,7 +200,7 @@ export class Db {
     this.raw.prepare(`INSERT INTO bee_state (bee, json, updated_ts) VALUES (?,?,?) ON CONFLICT(bee) DO UPDATE SET json = excluded.json, updated_ts = excluded.updated_ts`).run(s.id, JSON.stringify(s), ts);
   }
 
-  loadBee(bee: BeeId): BeeState | null {
+  loadBee(bee: string): BeeState | null {
     const row = this.raw.prepare(`SELECT json FROM bee_state WHERE bee = ?`).get(bee) as { json: string } | undefined;
     return row ? (JSON.parse(row.json) as BeeState) : null;
   }

@@ -46,8 +46,8 @@ describe("a rejected new order pauses that bee's new orders", () => {
     const engine = new Engine({ cfg, db, feed, jev: new Jev({ ...cfg.jev, client, now: () => now }), exec, bus: new EventBus(db), alerts: { send: (t: string) => alerts.push(t) } as unknown as Alerts, now: () => now });
     await engine.start();
     engine.stop();
-    for (const id of ["bee1", "bee2"] as const) engine.bees[id].cap = "trade_cap"; // only the Momentum bee acts
-    engine.bees.bee3.flatSince = now - 60 * 60_000;
+    for (const id of ["bee1", "bee2"] as const) engine.bees[id]!.cap = "trade_cap"; // only the Momentum bee acts
+    engine.bees.bee3!.flatSince = now - 60 * 60_000;
     await engine.tick();
     const first = sent.filter((s) => s.startsWith("bee3")).length;
     expect(first).toBe(1);

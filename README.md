@@ -1,5 +1,10 @@
 # beebots 🐝
 
+> **This fork now runs [The Colony](docs/COLONY.md)**, live (on paper) at https://beebots.covewrk.com: three royal
+> bees trade on the colony's best DNA while twelve worker bees evolve. Workers are rated every 4 hours, five stars lay
+> an egg, five X's die, and a beekeeper learns what is working and nudges every mutation towards it. `pnpm start`
+> runs the colony; the original three-bee engine below is still here as `pnpm start:classic`.
+
 [![Watch the video: I built AI trading bees with Jev](docs/video.jpg)](https://www.youtube.com/watch?v=8ijN8LGljKg)
 
 Three AI trading bees race each other on OKX perpetual futures. Every decision comes from **Jev** (TypeSafe AI's

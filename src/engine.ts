@@ -2,7 +2,7 @@ import { customBrain } from "./bees/custom.js";
 import { BRAINS } from "./bees/index.js";
 import { maxNotionalUsd, minutesSince, positionNotional, profitLockStop } from "./bees/common.js";
 import { coinOf, type Action, type BeeBrain, type BeeContext, type BeeState, type Position, type Side } from "./bees/types.js";
-import { BEES, type BeeId, type Config } from "./config.js";
+import { BEES, type BeeKnobs, type Config } from "./config.js";
 import { liveRules } from "./lab/brain.js";
 import type { Overlay } from "./lab/store.js";
 import type { Alerts } from "./alerts.js";
@@ -40,7 +40,64 @@ export interface EngineDeps {
   /** Dry run only: consume a one-shot "resume last position" request (flag file). */
   takeResumeRequest?: () => boolean;
   /** The Beekeeper's rewrites (lab/store.ts). A bump of `version` rebuilds the brains on the next tick, no restart. */
-  lab?: { readonly version: number; overlay(bee: BeeId): Overlay | null };
+  lab?: { readonly version: number; overlay(bee: string): Overlay | null };
+  /** Who trades, and how. Absent = the classic three Setup slots (classicRoster). */
+  roster?: Roster;
+}
+
+/**
+ * The bees this engine runs. The classic install has three fixed slots; the colony (colony/) adds and removes bees
+ * as they are born and die. Membership is read every tick: a new id gets fresh books, and an id that disappears is
+ * closed out (reduce-only, through the normal ledger) and then dropped, with onExit called once it is flat.
+ */
+export interface Roster {
+  ids(): string[];
+  name(id: string): string;
+  /** Called every time it is needed: cache inside the roster. */
+  brain(id: string): BeeBrain;
+  knobs(id: string): BeeKnobs;
+  /** How often this bee is asked for a decision (ms). Unset = every tick. Stops are checked every tick regardless. */
+  decideEveryMs?(id: string): number;
+  /** Paper money a new bee starts with. Unset = START_EQUITY_USD for every bee. */
+  startEquityUsd?(id: string): number;
+  /** A removed bee is flat and gone from the engine; `state` is its final books. */
+  onExit?(id: string, state: BeeState): void;
+}
+
+/** The three Setup slots: the style brain narrowed to the owner's coins and rules, or the Beekeeper's live rewrite. */
+export function classicRoster(cfg: Config, lab?: EngineDeps["lab"]): Roster {
+  const brains: Partial<Record<string, BeeBrain>> = {};
+  const brainOverlay: Partial<Record<string, number | null>> = {};
+  let brainsVersion = -1;
+  const slot = (id: string) => cfg.slots[id as (typeof BEES)[number]];
+  return {
+    ids: () => [...BEES],
+    name: (id) => slot(id)?.name ?? id,
+    brain(id) {
+      if (lab && lab.version !== brainsVersion) {
+        brainsVersion = lab.version;
+        for (const b of BEES) {
+          const overlay = lab.overlay(b)?.id ?? null;
+          if (brains[b] && (brainOverlay[b] ?? null) === overlay) continue;
+          if (brains[b]) log.info("bee brain updated by the Beekeeper", { bee: b, overlay });
+          delete brains[b];
+          brainOverlay[b] = overlay;
+        }
+      }
+      const s = slot(id);
+      return (brains[id] ??= customBrain(BRAINS[s.style], liveRules(s, lab?.overlay(id) ?? null)));
+    },
+    knobs(id) {
+      const s = slot(id);
+      const k = cfg.bees[s.style];
+      if (s.minHoldHours === undefined && s.trailAtr === undefined) return k;
+      return {
+        ...k,
+        ...(s.minHoldHours !== undefined ? { minHoldMinutes: s.minHoldHours * 60 } : {}),
+        ...(s.trailAtr !== undefined ? { trailAtr: s.trailAtr } : {}),
+      };
+    },
+  };
 }
 
 interface LastDecision {
@@ -66,9 +123,11 @@ function requiredAnswer(label: string): JevAnswer {
 }
 
 export class Engine {
-  readonly bees = {} as Record<BeeId, BeeState>;
-  private last = {} as Partial<Record<BeeId, LastDecision>>;
-  private orderPauseUntil = {} as Partial<Record<BeeId, number>>;
+  readonly bees: Record<string, BeeState> = {};
+  private last: Partial<Record<string, LastDecision>> = {};
+  private orderPauseUntil: Partial<Record<string, number>> = {};
+  private lastDecideAt: Partial<Record<string, number>> = {};
+  private roster: Roster;
   private now: () => number;
   private ticking = false;
   private stopped = false;
@@ -81,17 +140,18 @@ export class Engine {
   private jevDownAlerted = false;
   private recon: { ok: boolean | null; detail: string; ts: number } = { ok: null, detail: "not run yet", ts: 0 };
   private liveStartedAt: number | null = null;
-  private lastPulseAt: Partial<Record<BeeId, number>> = {};
-  private lastChipUsd: Partial<Record<BeeId, number>> = {};
+  private lastPulseAt: Partial<Record<string, number>> = {};
+  private lastChipUsd: Partial<Record<string, number>> = {};
   startedAt: number;
   private experimentStartedAt = 0;
   /** Experiment closed: no Jev calls, no new positions; open positions are closed, then the engine only marks and reconciles. */
   private closedAt: number | null = null;
-  private closeRetryAt: Partial<Record<BeeId, number>> = {};
+  private closeRetryAt: Partial<Record<string, number>> = {};
   private closeAnnounced = false;
 
   constructor(private d: EngineDeps) {
     this.now = d.now ?? Date.now;
+    this.roster = d.roster ?? classicRoster(d.cfg, d.lab);
     this.startedAt = this.now();
     this.lastFundingSlot = fundingSlot(this.startedAt);
   }
@@ -119,10 +179,7 @@ export class Engine {
       this.closeAnnounced = db.getMeta("experiment_flat_at") !== null;
     }
 
-    for (const id of BEES) {
-      this.bees[id] = db.loadBee(id) ?? freshBee(id, cfg.risk.startEquityUsd, this.now());
-      await this.d.exec.init(id);
-    }
+    for (const id of this.roster.ids()) await this.join(id);
 
     await this.refreshMarket();
     if (this.d.exec.kind === "okx") await this.reconcile();
@@ -139,7 +196,46 @@ export class Engine {
   stop(): void {
     this.stopped = true;
     for (const t of this.timers) clearTimeout(t);
-    for (const id of BEES) this.d.db.saveBee(this.bees[id], this.now());
+    for (const id of this.ids()) this.d.db.saveBee(this.bees[id]!, this.now());
+  }
+
+  /** The bees the engine holds books for right now (includes a removed bee until it is flat). */
+  private ids(): string[] {
+    return Object.keys(this.bees);
+  }
+
+  private async join(id: string): Promise<void> {
+    this.bees[id] = this.d.db.loadBee(id) ?? freshBee(id, this.roster.startEquityUsd?.(id) ?? this.d.cfg.risk.startEquityUsd, this.now());
+    await this.d.exec.init(id);
+  }
+
+  /** New ids get books; ids the roster dropped are closed out, then removed once flat. Runs inside the tick. */
+  private async syncRoster(now: number): Promise<string[]> {
+    const want = this.roster.ids();
+    const wanted = new Set(want);
+    for (const id of want) if (!this.bees[id]) await this.join(id);
+    for (const id of this.ids()) {
+      if (wanted.has(id)) continue;
+      const bee = this.bees[id]!;
+      const p = bee.position;
+      if (p && now >= (this.closeRetryAt[id] ?? 0)) {
+        const decisionId = this.d.db.insertDecision({
+          bee: id, ts: now, stateHash: "", stateJson: "{}", menuJson: "[]", choice: null, probabilities: null, confidence: null,
+          conviction: null, latencyMs: null, inputTokens: null, jevCostUsd: 0, jevError: null,
+          action: { kind: "close", reason: "removed" }, vetoedBy: null, forcedBy: "removed", status: "leaving the hive: closing position",
+        });
+        const ok = await this.order(id, decisionId, p.instId, p.side === "long" ? "sell" : "buy", p.contracts, true, "removed");
+        if (!ok) this.closeRetryAt[id] = now + 10_000;
+      }
+      if (!bee.position) {
+        this.d.db.saveBee(bee, now);
+        delete this.bees[id];
+        delete this.last[id];
+        delete this.lastDecideAt[id];
+        this.roster.onExit?.(id, bee);
+      }
+    }
+    return want.filter((id) => !!this.bees[id]);
   }
 
   private loop(fn: () => Promise<void>, everyMs: number) {
@@ -182,23 +278,32 @@ export class Engine {
         log.warn("ticker refresh failed", { err: safeError(err) });
       }
       const now = this.now();
-      for (const id of BEES) this.markBee(id, now);
+      for (const id of this.ids()) this.markBee(id, now);
       if (this.d.feed.lastRefreshAt === 0) return; // no market data yet
       if (this.d.exec.kind === "sim") this.simulateFunding(now);
+      const active = await this.syncRoster(now);
 
       if (this.closedAt === null && this.d.closeRequested?.()) this.beginClose(now);
       if (this.closedAt === null && this.d.takeResumeRequest?.()) await this.resumeLast(now);
       if (this.closedAt !== null) await this.windDown(now);
-      else await Promise.all(BEES.map((id) => this.decide(id, now).catch((err) => log.error("decision failed", { bee: id, err: safeError(err) }))));
+      else
+        await Promise.all(
+          active.map((id) => {
+            const every = this.roster.decideEveryMs?.(id) ?? 0;
+            const due = now - (this.lastDecideAt[id] ?? 0) >= every;
+            if (due) this.lastDecideAt[id] = now;
+            return (due ? this.decide(id, now) : this.guardStop(id, now)).catch((err) => log.error("decision failed", { bee: id, err: safeError(err) }));
+          }),
+        );
 
       if (now - this.lastEquityAt >= EQUITY_SNAPSHOT_MS) {
         this.lastEquityAt = now;
-        for (const id of BEES) {
-          const b = this.bees[id];
+        for (const id of this.ids()) {
+          const b = this.bees[id]!;
           this.d.db.insertEquity(id, now, b.equityUsd, b.cashUsd, b.uplUsd);
         }
       }
-      this.d.bus.emit("equity", { bees: BEES.map((id) => this.publicBee(id)) }, now);
+      this.d.bus.emit("equity", { bees: this.ids().map((id) => this.publicBee(id)) }, now);
       if (this.d.exec.kind === "okx" && now - this.lastReconAt >= RECON_MS) await this.reconcile();
       this.checkJevOutage(now);
     } finally {
@@ -206,8 +311,8 @@ export class Engine {
     }
   }
 
-  private ctx(id: BeeId, now: number): BeeContext {
-    const bee = this.bees[id];
+  private ctx(id: string, now: number): BeeContext {
+    const bee = this.bees[id]!;
     const p = bee.position;
     return {
       bee,
@@ -219,8 +324,8 @@ export class Engine {
     };
   }
 
-  private markBee(id: BeeId, now: number) {
-    const bee = this.bees[id];
+  private markBee(id: string, now: number) {
+    const bee = this.bees[id]!;
     const view = this.d.feed.view();
     const p = bee.position;
     const t = p ? view.tickers.get(p.instId) : undefined;
@@ -251,10 +356,34 @@ export class Engine {
     }
   }
 
-  private async decide(id: BeeId, now: number): Promise<void> {
+  /**
+   * A bee that is not due for a decision this tick (colony workers decide less often): only its stop is checked, so a
+   * slower decision rhythm never means a later stop.
+   */
+  private async guardStop(id: string, now: number): Promise<void> {
+    const bee = this.bees[id]!;
+    const p = bee.position;
+    const s = p ? this.d.feed.view().stats.get(p.instId) : undefined;
+    if (!p || !s || p.stopPx === null) return;
+    if (!(p.side === "long" ? s.mid <= p.stopPx : s.mid >= p.stopPx)) return;
+    const status = `stopped out of ${p.coin}`;
+    const action: Action = { kind: "close", reason: "stop" };
+    const decisionId = this.d.db.insertDecision({
+      bee: id, ts: now, stateHash: "", stateJson: "{}", menuJson: "[]", choice: null, probabilities: null, confidence: null,
+      conviction: null, latencyMs: null, inputTokens: null, jevCostUsd: 0, jevError: null, action, vetoedBy: null, forcedBy: "stop", status,
+    });
+    this.d.bus.emit("decision", {
+      bee: id, choice: null, probabilities: [], confidence: null, conviction: null, latencyMs: null, tokens: null,
+      jevUsd: 0, action: describeAction(action), vetoedBy: null, forcedBy: "stop", status, jev: "no_options", ...this.liveChip(id),
+    }, now);
+    await this.execute(id, action, decisionId, this.ctx(id, now), 0);
+    this.d.db.saveBee(bee, now);
+  }
+
+  private async decide(id: string, now: number): Promise<void> {
     const { cfg, db, bus, jev } = this.d;
     const brain = this.brain(id);
-    const bee = this.bees[id];
+    const bee = this.bees[id]!;
     // Benched (trade cap or fee budget): the bee rides whatever it holds. Jev is not asked, because nothing it
     // chose could be acted on; only code can close the position (stop, time stop, loss stop) until 00:00 UTC.
     if (bee.cap === "trade_cap" || bee.cap === "fee_budget") return this.decideBenched(id, now);
@@ -268,7 +397,7 @@ export class Engine {
     // One legal move and it is "keep what you hold" (a Momentum bee inside its 24h lock): asking Jev buys nothing, so
     // the rules make the call. Only for a hold: a lone open or close still goes to Jev.
     const labels = Object.keys(menu);
-    const required = labels.length === 1 && menu[labels[0]!]!.intent.kind === "hold";
+    const required = (brain.rulesOnly === true && labels.length > 0) || (labels.length === 1 && menu[labels[0]!]!.intent.kind === "hold");
     if (jev.capTripped) jevStatus = "daily_cap";
     else if (labels.length === 0) jevStatus = "no_options";
     else if (required) r = requiredAnswer(labels[0]!);
@@ -293,12 +422,12 @@ export class Engine {
       const detail = risk.status;
       db.insertCap(id, now, risk.capTripped, detail);
       bus.emit("cap", { bee: id, cap: risk.capTripped, detail }, now);
-      this.d.alerts.send(`${this.d.cfg.slots[id].name}: ${detail}`);
+      this.d.alerts.send(`${this.roster.name(id)}: ${detail}`);
     }
     bee.cap = risk.cap;
     // A rules-only hold that the risk layer left alone (a stop or cap still overrides it and shows as usual).
     const ruled = required && risk.action.kind === "none" && !risk.forcedBy;
-    const status = ruled ? `${labels[0]}: required by rules, Jev not asked` : risk.status;
+    const status = ruled ? `${labels[0]}: ${brain.rulesOnly ? "rules-only bee" : "required by rules"}, Jev not asked` : risk.status;
 
     // Hard rule 10: recorded before it is acted on.
     const costUsd = r && r.ok ? r.costUsd : 0;
@@ -364,9 +493,9 @@ export class Engine {
 
   // ---------- benched: ride the position ----------
 
-  private async decideBenched(id: BeeId, now: number): Promise<void> {
+  private async decideBenched(id: string, now: number): Promise<void> {
     const { db } = this.d;
-    const bee = this.bees[id];
+    const bee = this.bees[id]!;
     const ctx = this.ctx(id, now);
     const risk = applyRisk({
       ctx,
@@ -380,7 +509,7 @@ export class Engine {
     if (risk.capTripped) {
       db.insertCap(id, now, risk.capTripped, risk.status);
       this.d.bus.emit("cap", { bee: id, cap: risk.capTripped, detail: risk.status }, now);
-      this.d.alerts.send(`${this.d.cfg.slots[id].name}: ${risk.status}`);
+      this.d.alerts.send(`${this.roster.name(id)}: ${risk.status}`);
     }
     bee.cap = risk.cap;
     const prev = this.last[id];
@@ -411,10 +540,10 @@ export class Engine {
   }
 
   /** The bee's money right now, for the stream: open P&L (or total P&L when flat) and how it moved since its last row. */
-  private liveChip(id: BeeId) {
-    const b = this.bees[id];
+  private liveChip(id: string) {
+    const b = this.bees[id]!;
     const p = b.position;
-    const value = p ? b.uplUsd : b.equityUsd - this.d.cfg.risk.startEquityUsd;
+    const value = p ? b.uplUsd : b.equityUsd - this.startOf(id);
     const prev = this.lastChipUsd[id];
     this.lastChipUsd[id] = value;
     return {
@@ -435,8 +564,8 @@ export class Engine {
    */
   private async resumeLast(now: number): Promise<void> {
     if (this.d.cfg.mode !== "dry") return;
-    for (const id of BEES) {
-      const bee = this.bees[id];
+    for (const id of this.ids()) {
+      const bee = this.bees[id]!;
       if (bee.position || (bee.cap !== "trade_cap" && bee.cap !== "fee_budget")) continue;
       const last = this.d.db.raw
         .prepare(`SELECT inst_id AS instId, side, contracts FROM orders WHERE bee = ? AND reduce_only = 0 AND state = 'filled' ORDER BY id DESC LIMIT 1`)
@@ -449,7 +578,7 @@ export class Engine {
         status: "benched: back into its last position to ride it",
       });
       const ok = await this.order(id, decisionId, last.instId, last.side, last.contracts, false, "resume_last");
-      const p = (this.bees[id] as BeeState).position; // re-read: order() just filled it
+      const p = this.bees[id]!.position; // re-read: order() just filled it
       if (!ok || !p) continue;
       const ctx = this.ctx(id, this.now());
       const inst = ctx.view.instruments.get(last.instId);
@@ -475,8 +604,8 @@ export class Engine {
   /** Close whatever each bee holds (reduce-only market, through the normal ledger), then idle. */
   private async windDown(now: number): Promise<void> {
     await Promise.all(
-      BEES.map(async (id) => {
-        const bee = this.bees[id];
+      this.ids().map(async (id) => {
+        const bee = this.bees[id]!;
         const p = bee.position;
         if (!p || now < (this.closeRetryAt[id] ?? 0)) return;
         const decisionId = this.d.db.insertDecision({
@@ -489,7 +618,7 @@ export class Engine {
         this.d.db.saveBee(bee, now);
       }),
     ).catch((err) => log.error("close failed", { err: safeError(err) }));
-    if (!this.closeAnnounced && BEES.every((id) => !this.bees[id].position)) {
+    if (!this.closeAnnounced && this.ids().every((id) => !this.bees[id]!.position)) {
       this.closeAnnounced = true;
       this.d.db.setMeta("experiment_flat_at", String(now));
       this.lastReconAt = 0; // confirm flat against OKX on the next tick
@@ -500,8 +629,8 @@ export class Engine {
 
   // ---------- execution ----------
 
-  private async execute(id: BeeId, action: Action, decisionId: number, ctx: BeeContext, _conviction: number): Promise<void> {
-    const bee = this.bees[id];
+  private async execute(id: string, action: Action, decisionId: number, ctx: BeeContext, _conviction: number): Promise<void> {
+    const bee = this.bees[id]!;
     const p = bee.position;
     switch (action.kind) {
       case "close":
@@ -522,7 +651,7 @@ export class Engine {
         const n = inst && s ? contractsFor(action.notionalUsd, inst, s.mid) : 0;
         if (n > 0) {
           const ok = await this.order(id, decisionId, p.instId, p.side === "long" ? "buy" : "sell", n, false, "add");
-          const q = this.bees[id].position;
+          const q = this.bees[id]!.position;
           // An add raises the average entry; don't let it turn the position into a loser: stop to at least the new average.
           if (ok && q && this.brain(id).protectAdds) ratchetStop(q, q.entryPx);
         } else log.info("add rounds to zero contracts, skipped", { bee: id });
@@ -541,7 +670,7 @@ export class Engine {
     }
   }
 
-  private async openPosition(id: BeeId, decisionId: number, instId: string, side: Side, notionalUsd: number): Promise<void> {
+  private async openPosition(id: string, decisionId: number, instId: string, side: Side, notionalUsd: number): Promise<void> {
     const view = this.d.feed.view();
     const inst = view.instruments.get(instId);
     const s = view.stats.get(instId);
@@ -552,7 +681,7 @@ export class Engine {
       return;
     }
     const ok = await this.order(id, decisionId, instId, side === "long" ? "buy" : "sell", contracts, false, "open");
-    const bee = this.bees[id];
+    const bee = this.bees[id]!;
     if (!ok || !bee.position) return;
     bee.tradesToday++;
     const ctx = this.ctx(id, this.now());
@@ -565,7 +694,7 @@ export class Engine {
   }
 
   /** Record the order, send it, apply the fill. Returns true when it filled. */
-  private async order(id: BeeId, decisionId: number, instId: string, side: "buy" | "sell", contracts: number, reduceOnly: boolean, purpose: string): Promise<boolean> {
+  private async order(id: string, decisionId: number, instId: string, side: "buy" | "sell", contracts: number, reduceOnly: boolean, purpose: string): Promise<boolean> {
     const { db, bus, exec } = this.d;
     const now = this.now();
     const inst = this.d.feed.view().instruments.get(instId);
@@ -587,12 +716,12 @@ export class Engine {
       if (res.state === "unknown") this.lastReconAt = 0; // reconcile on the next tick
       if (!reduceOnly) {
         this.orderPauseUntil[id] = now + ORDER_REJECT_PAUSE_MS;
-        this.d.alerts.send(`${this.d.cfg.slots[id].name}: ${inst.coin} ${purpose} order rejected (${res.error.code} ${res.error.message}); new orders paused ${ORDER_REJECT_PAUSE_MS / 60_000} min`);
+        this.d.alerts.send(`${this.roster.name(id)}: ${inst.coin} ${purpose} order rejected (${res.error.code} ${res.error.message}); new orders paused ${ORDER_REJECT_PAUSE_MS / 60_000} min`);
       }
       return false;
     }
     db.updateOrder(orderId, "filled", res.ordId, null);
-    const bee = this.bees[id];
+    const bee = this.bees[id]!;
     const realised = applyFill(bee, { instId, coin: inst.coin, side, contracts: res.contracts, px: res.avgPx, feeUsd: res.feeUsd, ctVal: inst.ctVal, ts: res.ts });
     const notionalUsd = res.contracts * inst.ctVal * res.avgPx;
     db.insertFill({ orderId, bee: id, ts: res.ts, instId, side, contracts: res.contracts, px: res.avgPx, notionalUsd, feeUsd: res.feeUsd, realisedUsd: realised });
@@ -608,7 +737,7 @@ export class Engine {
       notionalUsd: Number(notionalUsd.toFixed(2)),
       feeUsd: Number(res.feeUsd.toFixed(4)),
       realisedUsd: Number(realised.toFixed(2)),
-      label: `${this.d.cfg.slots[id].name} ${dir} ${inst.coin} $${notionalUsd.toFixed(0)}`,
+      label: `${this.roster.name(id)} ${dir} ${inst.coin} $${notionalUsd.toFixed(0)}`,
     });
     return true;
   }
@@ -621,8 +750,8 @@ export class Engine {
     if (slot === this.lastFundingSlot) return;
     this.lastFundingSlot = slot;
     const view = this.d.feed.view();
-    for (const id of BEES) {
-      const bee = this.bees[id];
+    for (const id of this.ids()) {
+      const bee = this.bees[id]!;
       const p = bee.position;
       const s = p ? view.stats.get(p.instId) : undefined;
       const inst = p ? view.instruments.get(p.instId) : undefined;
@@ -638,12 +767,12 @@ export class Engine {
   /** MODE=demo/live: record funding bills (type 8) as their own ledger rows. */
   private async pollFunding() {
     const since = Number(this.d.db.getMeta("funding_since") ?? 0);
-    for (const id of BEES) {
+    for (const id of this.ids()) {
       const bills = await this.d.exec.fundingBills(id);
       for (const b of bills ?? []) {
         if (b.ts < since) continue;
         if (this.d.db.insertFunding(id, b.ts, b.instId, b.amountUsd, b.billId)) {
-          applyFunding(this.bees[id], b.amountUsd);
+          applyFunding(this.bees[id]!, b.amountUsd);
           this.d.bus.emit("funding", { bee: id, coin: b.instId?.split("-")[0] ?? null, amountUsd: b.amountUsd }, b.ts);
         }
       }
@@ -656,11 +785,11 @@ export class Engine {
     this.lastReconAt = now;
     const view = this.d.feed.view();
     const diffs: string[] = [];
-    for (const id of BEES) {
-      const bee = this.bees[id];
+    for (const id of this.ids()) {
+      const bee = this.bees[id]!;
       const ex = await this.d.exec.positions(id);
       if (ex === null) {
-        diffs.push(`${this.d.cfg.slots[id].name}: could not read OKX positions`);
+        diffs.push(`${this.roster.name(id)}: could not read OKX positions`);
         continue;
       }
       const theirs = ex[0];
@@ -714,7 +843,7 @@ export class Engine {
         }
       }
       this.d.db.insertRecon(id, now, ok, { detail });
-      if (!ok) diffs.push(`${this.d.cfg.slots[id].name}: ${detail}`);
+      if (!ok) diffs.push(`${this.roster.name(id)}: ${detail}`);
     }
     const ok = diffs.length === 0;
     const was = this.recon.ok;
@@ -726,9 +855,9 @@ export class Engine {
   /** Momentum bees: who is #1 on the hourly rank, and for how many ranks in a row. */
   private rankBoozyHourly() {
     const now = this.now();
-    for (const id of BEES) {
-      if (this.d.cfg.slots[id].style !== "boozy") continue;
-      const bee = this.bees[id];
+    for (const id of this.ids()) {
+      if (this.brain(id).id !== "boozy") continue;
+      const bee = this.bees[id]!;
       if (Math.floor(now / 3_600_000) === Math.floor(bee.top1.rankedAt / 3_600_000)) continue;
       // Each Momentum bee's own ranking: a coin-restricted bee only ranks its own coins.
       const topId = this.brain(id).universe(this.ctx(id, now))[0];
@@ -738,39 +867,16 @@ export class Engine {
     }
   }
 
-  private brains: Partial<Record<BeeId, BeeBrain>> = {};
-  private brainOverlay: Partial<Record<BeeId, number | null>> = {};
-  private brainsVersion = -1;
-
-  /**
-   * The slot's style brain, narrowed to the owner's coins and carrying the owner's rules (bees/custom.ts). While the
-   * Beekeeper has a rewrite live for the bee, its rules stand in for the owner's (lab/brain.ts).
-   */
-  private brain(id: BeeId): BeeBrain {
-    const lab = this.d.lab;
-    if (lab && lab.version !== this.brainsVersion) {
-      this.brainsVersion = lab.version;
-      for (const b of BEES) {
-        const overlay = lab.overlay(b)?.id ?? null;
-        if (this.brains[b] && (this.brainOverlay[b] ?? null) === overlay) continue;
-        if (this.brains[b]) log.info("bee brain updated by the Beekeeper", { bee: b, overlay });
-        delete this.brains[b];
-        this.brainOverlay[b] = overlay;
-      }
-    }
-    const s = this.d.cfg.slots[id];
-    return (this.brains[id] ??= customBrain(BRAINS[s.style], liveRules(s, lab?.overlay(id) ?? null)));
+  private startOf(id: string): number {
+    return this.bees[id]?.startEquityUsd ?? this.d.cfg.risk.startEquityUsd;
   }
 
-  private knobs(id: BeeId) {
-    const slot = this.d.cfg.slots[id];
-    const k = this.d.cfg.bees[slot.style];
-    if (slot.minHoldHours === undefined && slot.trailAtr === undefined) return k;
-    return {
-      ...k,
-      ...(slot.minHoldHours !== undefined ? { minHoldMinutes: slot.minHoldHours * 60 } : {}),
-      ...(slot.trailAtr !== undefined ? { trailAtr: slot.trailAtr } : {}),
-    };
+  private brain(id: string): BeeBrain {
+    return this.roster.brain(id);
+  }
+
+  private knobs(id: string): BeeKnobs {
+    return this.roster.knobs(id);
   }
 
   private checkJevOutage(now: number) {
@@ -792,17 +898,18 @@ export class Engine {
 
   // ---------- read-only views for the dashboard ----------
 
-  private publicBee(id: BeeId) {
-    const b = this.bees[id];
+  private publicBee(id: string) {
+    const b = this.bees[id]!;
     const view = this.d.feed.view();
     const p = b.position;
     const inst = p ? view.instruments.get(p.instId) : undefined;
     const mid = p ? view.tickers.get(p.instId)?.mid : undefined;
-    const start = this.d.cfg.risk.startEquityUsd;
+    const start = this.startOf(id);
     const knobs = this.knobs(id);
     const r2 = (x: number) => Number(x.toFixed(2));
     return {
       bee: id,
+      startEquityUsd: start,
       equityUsd: r2(b.equityUsd),
       pnlUsd: r2(b.equityUsd - start),
       pnlPct: r2(((b.equityUsd - start) / start) * 100),
@@ -831,14 +938,14 @@ export class Engine {
   }
 
   snapshot() {
-    const bees = BEES.map((id) => this.publicBee(id));
+    const bees = this.ids().map((id) => this.publicBee(id));
     const sum = (f: (b: (typeof bees)[number]) => number) => Number(bees.reduce((a, b) => a + f(b), 0).toFixed(4));
     const view = this.d.feed.view();
     return {
       ts: this.now(),
       mode: this.d.cfg.mode,
       startedAt: this.experimentStartedAt,
-      closed: this.closedAt === null ? null : { at: this.closedAt, flat: BEES.every((id) => !this.bees[id].position) },
+      closed: this.closedAt === null ? null : { at: this.closedAt, flat: this.ids().every((id) => !this.bees[id]!.position) },
       startEquityUsd: this.d.cfg.risk.startEquityUsd,
       tickMs: this.d.cfg.tickMs,
       bees,
@@ -857,7 +964,7 @@ export class Engine {
 
   health() {
     const age = this.now() - this.d.feed.lastRefreshAt;
-    return { ok: this.d.feed.lastRefreshAt > 0 && age < 5 * this.d.cfg.dataRefreshMs, mode: this.d.cfg.mode, closed: this.closedAt !== null, flat: BEES.every((id) => !this.bees[id].position), marketAgeMs: age, uptimeS: Math.round((this.now() - this.startedAt) / 1000) };
+    return { ok: this.d.feed.lastRefreshAt > 0 && age < 5 * this.d.cfg.dataRefreshMs, mode: this.d.cfg.mode, closed: this.closedAt !== null, flat: this.ids().every((id) => !this.bees[id]!.position), marketAgeMs: age, uptimeS: Math.round((this.now() - this.startedAt) / 1000) };
   }
 }
 

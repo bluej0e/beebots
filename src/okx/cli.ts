@@ -9,7 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
-import type { BeeId, OkxCreds } from "../config.js";
+import type { OkxCreds } from "../config.js";
 import { redactString } from "../redact.js";
 
 const require = createRequire(import.meta.url);
@@ -28,7 +28,7 @@ export class OkxCliError extends Error {
 export interface CliCall {
   args: string[];
   /** Which bee's profile + keys to use. Omit for public (keyless) calls. */
-  bee?: BeeId;
+  bee?: string;
   creds?: OkxCreds;
   /** true = --demo (x-simulated-trading), false = --live. Demo has its own instrument ids, so public calls pass it too. */
   demo?: boolean;

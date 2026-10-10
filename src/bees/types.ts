@@ -1,4 +1,4 @@
-import type { BeeId, BeeKnobs, Config } from "../config.js";
+import type { BeeKnobs, Config } from "../config.js";
 import type { StyleId } from "../settings.js";
 import type { CoinStats, MarketView } from "../market/types.js";
 
@@ -27,7 +27,9 @@ export interface Position {
 export type CapReason = "trade_cap" | "fee_budget" | "loss_stop" | "retired";
 
 export interface BeeState {
-  id: BeeId;
+  id: string;
+  /** What this bee started with (colony bees differ by tier). Absent in books saved before it existed: the config's. */
+  startEquityUsd?: number;
   /** Realised cash: start equity + realised P&L - fees + funding (ledger). */
   cashUsd: number;
   /** Mark-to-market equity = cash + unrealised P&L. */
@@ -120,6 +122,8 @@ export interface BeeBrain {
   timeStopMinutes?: (ctx: BeeContext) => number;
   /** Code-side sizing: an add that brings an undersized position back to target (fires when Jev holds). */
   rebalance?: (ctx: BeeContext) => Extract<Intent, { kind: "add" }> | null;
+  /** Never asks Jev: the first menu option is the bee's move (colony bees can evolve this on to save every token). */
+  rulesOnly?: boolean;
   /** This bee waits for its setup instead of being forced in when flat (drama rule 2 does not apply). */
   neverForce?: boolean;
   /** Status line while flat with nothing on the menu (e.g. "waiting for a breakout"). */

@@ -1,11 +1,11 @@
 // Our own books per bee. OKX is the source of truth in demo/live; reconciliation compares the two.
 import { uplUsd } from "./bees/common.js";
 import type { BeeState, Position } from "./bees/types.js";
-import type { BeeId } from "./config.js";
 
-export function freshBee(id: BeeId, equityUsd: number, now: number): BeeState {
+export function freshBee(id: string, equityUsd: number, now: number): BeeState {
   return {
     id,
+    startEquityUsd: equityUsd,
     cashUsd: equityUsd,
     equityUsd,
     uplUsd: 0,

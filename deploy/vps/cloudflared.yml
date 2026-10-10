@@ -1,6 +1,5 @@
 # beebots tunnel on the VPS (/etc/cloudflared/config.yml). The credentials file is copied from the machine that
-# created the tunnel and is not in the repo. Run only ONE connector for this tunnel (the PC's was retired), or
-# visitors get split between them.
+# created the tunnel and is not in the repo. Run only ONE connector for this tunnel, or visitors get split between them.
 tunnel: 763d114a-7cc0-4548-a6d9-df4978d597de
 credentials-file: /etc/cloudflared/763d114a-7cc0-4548-a6d9-df4978d597de.json
 no-autoupdate: true
@@ -8,10 +7,4 @@ no-autoupdate: true
 ingress:
   - hostname: beebots.covewrk.com
     service: http://127.0.0.1:4170
-  - hostname: beebots-lab1.covewrk.com
-    service: http://127.0.0.1:4173
-  - hostname: beebots-lab2.covewrk.com
-    service: http://127.0.0.1:4174
-  - hostname: beebots-lab3.covewrk.com
-    service: http://127.0.0.1:4175
   - service: http_status:404

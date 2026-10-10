@@ -1,4 +1,4 @@
-import type { BeeId, OkxCreds } from "../config.js";
+import type { OkxCreds } from "../config.js";
 import { log } from "../log.js";
 import type { Instrument, Ticker } from "../market/types.js";
 import type { OkxCli } from "../okx/cli.js";
@@ -33,12 +33,12 @@ export interface FundingBill {
 
 export interface Executor {
   readonly kind: "sim" | "okx";
-  init(bee: BeeId): Promise<void>;
-  market(bee: BeeId, req: OrderReq): Promise<OrderResult>;
-  positions(bee: BeeId): Promise<ExchangePosition[] | null>;
-  fundingBills(bee: BeeId): Promise<FundingBill[] | null>;
+  init(bee: string): Promise<void>;
+  market(bee: string, req: OrderReq): Promise<OrderResult>;
+  positions(bee: string): Promise<ExchangePosition[] | null>;
+  fundingBills(bee: string): Promise<FundingBill[] | null>;
   /** Fees OKX charged for these order ids (USD, positive = paid). */
-  feesFor(bee: BeeId, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null>;
+  feesFor(bee: string, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null>;
 }
 
 /**
@@ -54,7 +54,7 @@ export class SimExecutor implements Executor {
 
   async init(): Promise<void> {}
 
-  async market(_bee: BeeId, req: OrderReq): Promise<OrderResult> {
+  async market(_bee: string, req: OrderReq): Promise<OrderResult> {
     const { tickers, instruments } = this.market_();
     const t = tickers.get(req.instId);
     const inst = instruments.get(req.instId);
@@ -88,19 +88,19 @@ export class OkxExecutor implements Executor {
 
   constructor(
     private cli: OkxCli,
-    private creds: Partial<Record<BeeId, OkxCreds>>,
+    private creds: Partial<Record<string, OkxCreds>>,
     private demo: boolean,
     private instrument: (instId: string) => Instrument | undefined,
     private leverage: number,
   ) {}
 
-  private run<T>(bee: BeeId, args: string[]): Promise<T> {
+  private run<T>(bee: string, args: string[]): Promise<T> {
     const c = this.creds[bee];
     if (!c) throw new Error(`no OKX credentials for ${bee}`);
     return this.cli.run<T>({ args, bee, creds: c, demo: this.demo });
   }
 
-  async init(bee: BeeId): Promise<void> {
+  async init(bee: string): Promise<void> {
     const [cfg] = await this.run<Row[]>(bee, ["account", "config"]);
     if (cfg?.posMode && cfg.posMode !== "net_mode") {
       log.info("setting net position mode", { bee });
@@ -108,7 +108,7 @@ export class OkxExecutor implements Executor {
     }
   }
 
-  private async ensureLeverage(bee: BeeId, instId: string): Promise<void> {
+  private async ensureLeverage(bee: string, instId: string): Promise<void> {
     const key = `${bee}:${instId}`;
     if (this.leverageSet.has(key)) return;
     // /account/leverage-info 404s on EEA; set it and trust the positions read-back.
@@ -116,7 +116,7 @@ export class OkxExecutor implements Executor {
     this.leverageSet.add(key);
   }
 
-  async market(bee: BeeId, req: OrderReq): Promise<OrderResult> {
+  async market(bee: string, req: OrderReq): Promise<OrderResult> {
     const inst = this.instrument(req.instId);
     if (!inst) return { ok: false, error: { code: "INST", message: "unknown instrument" }, state: "rejected" };
     try {
@@ -150,7 +150,7 @@ export class OkxExecutor implements Executor {
     }
   }
 
-  async positions(bee: BeeId): Promise<ExchangePosition[] | null> {
+  async positions(bee: string): Promise<ExchangePosition[] | null> {
     try {
       const rows = await this.run<Row[]>(bee, ["futures", "positions"]);
       return rows.filter((r) => Number(r.pos) !== 0).map((r) => ({ instId: r.instId!, pos: Number(r.pos), avgPx: Number(r.avgPx) }));
@@ -160,7 +160,7 @@ export class OkxExecutor implements Executor {
     }
   }
 
-  async fundingBills(bee: BeeId): Promise<FundingBill[] | null> {
+  async fundingBills(bee: string): Promise<FundingBill[] | null> {
     try {
       const rows = await this.run<Row[]>(bee, ["account", "bills", "--instType", "FUTURES", "--limit", "100"]);
       // type 8 = funding fee
@@ -171,7 +171,7 @@ export class OkxExecutor implements Executor {
     }
   }
 
-  async feesFor(bee: BeeId, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null> {
+  async feesFor(bee: string, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null> {
     try {
       const out = new Map<string, number>();
       for (const instId of instIds) {
