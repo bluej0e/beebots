@@ -137,6 +137,8 @@ describe("colony", () => {
     colony.workers().forEach((w, i) => curve(db, w.id, T0, T0 + 10 * HOUR, i));
     colony.rate(T0 + 10 * HOUR);
     expect(colony.lastRound()).toBeNull();
+    expect(colony.lastRoundRun()).toEqual({ round: 1, ts: T0 + 10 * HOUR, rated: 0 });
+    expect(colony.recentLog(1)[0]!.text).toContain("round 1 ran: no worker is 24h old yet");
   });
 
   it("five X's kill any worker; five stars lay an egg that waits in the nursery, parent gets +1 and its stars reset", () => {

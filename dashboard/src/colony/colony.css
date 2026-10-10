@@ -841,3 +841,55 @@ table.dna tr.changed td:nth-child(2) {
   opacity: 0.5;
   text-decoration: line-through;
 }
+
+/* ---------- proof of life ---------- */
+.pulse {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.1rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 0.6rem;
+  background: rgba(63, 207, 63, 0.07);
+  border: 1px solid rgba(63, 207, 63, 0.3);
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.pulse b {
+  color: var(--good-text);
+  margin-left: -0.6rem;
+}
+.pulse-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--good-text);
+  box-shadow: 0 0 0 0 rgba(63, 207, 63, 0.6);
+  animation: beat 2s infinite;
+}
+.pulse.quiet {
+  background: rgba(250, 178, 25, 0.07);
+  border-color: rgba(250, 178, 25, 0.35);
+}
+.pulse.quiet b {
+  color: var(--star);
+}
+.pulse.quiet .pulse-dot {
+  background: var(--star);
+  animation: none;
+}
+@keyframes beat {
+  0% { box-shadow: 0 0 0 0 rgba(63, 207, 63, 0.55); }
+  70% { box-shadow: 0 0 0 0.5rem rgba(63, 207, 63, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 207, 63, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none; }
+}
+.notice {
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.45rem;
+  background: var(--card-2);
+  line-height: 1.45;
+}

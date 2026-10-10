@@ -83,6 +83,9 @@ export interface ColonyView {
   rules: { workers: number; rateEveryHours: number; rateWindowHours: number; minAgeHours: number; starsToBreed: number; xsToDie: number; promoteEveryHours: number; eggWaitHours: number; maxNursery: number };
   nextRatingAt: number;
   nextPromotionAt: number;
+  lastRoundRun: { round: number; ts: number; rated: number } | null;
+  firstMarksAt: number | null;
+  activity: { decisions: number; fills: number; lastDecisionAt: number | null; continuousSince: number | null; longestGapMin: number; uptimeS: number | null; marketAgeMs: number | null };
   stats: { born: number; alive: number; died: number; maxGeneration: number; eggs: number };
   royals: Bee[];
   workers: Bee[];

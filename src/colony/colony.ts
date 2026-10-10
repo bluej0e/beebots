@@ -326,6 +326,49 @@ export class Colony implements Roster {
     return Number(this.db.getMeta("colony_next_promotion") ?? 0);
   }
 
+  /** The last rating round that ran (it may have rated nobody), or null before the first. */
+  lastRoundRun(): { round: number; ts: number; rated: number } | null {
+    const round = Number(this.db.getMeta("colony_round") ?? 0);
+    if (!round) return null;
+    // Rounds from before the timestamp was kept: the schedule says when it ran.
+    const ts = Number(this.db.getMeta("colony_last_round_at") ?? 0) || this.nextRatingAt() - this.opts.rateEveryHours * HOUR;
+    return { round, ts, rated: Number(this.db.getMeta("colony_last_round_rated") ?? 0) };
+  }
+
+  /** The first rating round at which some worker is old enough to be rated (now-ish if one already is). */
+  firstMarksAt(now = this.now()): number | null {
+    const ready = Math.min(...this.workers().map((b) => b.bornAt + this.opts.minAgeHours * HOUR));
+    if (!Number.isFinite(ready)) return null;
+    let t = this.nextRatingAt();
+    if (!t) return null;
+    while (t < ready) t += this.opts.rateEveryHours * HOUR;
+    return Math.max(t, now);
+  }
+
+  private gapCache: { at: number; since: number | null; longestGapMin: number } | null = null;
+
+  /**
+   * Proof of life for the dashboard: how much the engine has done, when it last did something, and how long it has
+   * traded without a break (the King's 10 s equity snapshots: a gap over 5 minutes means the engine was down).
+   */
+  activity(): { decisions: number; fills: number; lastDecisionAt: number | null; continuousSince: number | null; longestGapMin: number } {
+    const d = this.db.raw.prepare(`SELECT MAX(id) AS n, MAX(ts) AS t FROM decisions`).get() as { n: number | null; t: number | null };
+    const f = this.db.raw.prepare(`SELECT COUNT(*) AS n FROM fills`).get() as { n: number };
+    const now = this.now();
+    if (!this.gapCache || now - this.gapCache.at > 60_000) {
+      const rows = this.db.raw.prepare(`SELECT ts FROM equity_snapshots WHERE bee = 'king' ORDER BY ts`).all() as Array<{ ts: number }>;
+      let since = rows[0]?.ts ?? null;
+      let longest = 0;
+      for (let i = 1; i < rows.length; i++) {
+        const gap = rows[i]!.ts - rows[i - 1]!.ts;
+        longest = Math.max(longest, gap);
+        if (gap > 5 * 60_000) since = rows[i]!.ts;
+      }
+      this.gapCache = { at: now, since, longestGapMin: Number((longest / 60_000).toFixed(1)) };
+    }
+    return { decisions: d.n ?? 0, fills: f.n, lastDecisionAt: d.t, continuousSince: this.gapCache.since, longestGapMin: this.gapCache.longestGapMin };
+  }
+
   // ---------- the clock ----------
 
   /** Called every engine tick or so. Runs a rating round and the beekeeper's visit when they are due. */
@@ -403,6 +446,12 @@ export class Colony implements Roster {
     const eligible = this.workers().filter((b) => now - b.bornAt >= this.opts.minAgeHours * HOUR);
     const scores = eligible.map((b) => this.scoreOver(b.id, from, now)).filter((s): s is Score => s !== null);
     scores.sort((a, b) => b.score - a.score);
+    this.db.setMeta("colony_last_round_at", String(now));
+    this.db.setMeta("colony_last_round_rated", String(scores.length));
+    if (scores.length < 3) {
+      const first = this.firstMarksAt(now + 1);
+      this.note(now, "round", null, `round ${round} ran: ${scores.length ? `only ${scores.length} worker${scores.length === 1 ? " is" : "s are"}` : "no worker is"} ${this.opts.minAgeHours}h old yet, so no stars or X's${first ? ` (first marks at ${new Date(first).toISOString().slice(11, 16)} UTC)` : ""}`);
+    }
     const marks = new Map<string, "star" | "x">();
     if (scores.length >= 3) {
       marks.set(scores[0]!.bee, "star");

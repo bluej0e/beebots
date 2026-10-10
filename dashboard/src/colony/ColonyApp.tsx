@@ -296,13 +296,25 @@ function Nursery({ view, onOpen }: { view: ColonyView; onOpen: (id: string) => v
 
 function RoundTable({ view }: { view: ColonyView }) {
   const r = view.lastRound;
+  const ran = view.lastRoundRun;
   const name = (id: string) => view.lineage.find((b) => b.id === id)?.name ?? id;
   return (
     <section className="panel">
       <div className="panel-head">
         <span className="eyebrow">Last rating</span>
-        <span className="dim small">{r ? `round ${r.round} · ${ago(r.ts, view.ts)}` : `first round in ${until(view.nextRatingAt, view.ts)}`}</span>
+        <span className="dim small">{ran ? `round ${ran.round} · ${ago(ran.ts, view.ts)}` : `first round in ${until(view.nextRatingAt, view.ts)}`}</span>
       </div>
+      {ran && ran.rated < 3 && (
+        <p className="small notice">
+          Round {ran.round} ran on schedule, but no worker is {view.rules.minAgeHours}h old yet, so nobody could be rated.
+          {view.firstMarksAt && (
+            <>
+              {" "}
+              First stars and X's at <b>{new Date(view.firstMarksAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</b> (in {until(view.firstMarksAt, Date.now())}).
+            </>
+          )}
+        </p>
+      )}
       {!r ? (
         <p className="dim small">
           Every {view.rules.rateEveryHours}h each worker older than {view.rules.minAgeHours}h is scored on its last {view.rules.rateWindowHours}h: return minus half its worst drawdown. Best gets a star, worst an X.
@@ -367,6 +379,26 @@ function Graveyard({ view, onOpen }: { view: ColonyView; onOpen: (id: string) =>
         ))}
       </ul>
     </section>
+  );
+}
+
+/** Proof of life: is the engine actually trading, and since when. */
+function Pulse({ view }: { view: ColonyView }) {
+  const a = view.activity;
+  const quiet = a.lastDecisionAt === null || Date.now() - a.lastDecisionAt > 3 * 60_000;
+  const up = a.continuousSince ? (Date.now() - a.continuousSince) / 1000 : 0;
+  const upText = up >= 86400 ? `${(up / 86400).toFixed(1)} days` : up >= 3600 ? `${Math.floor(up / 3600)}h ${Math.floor((up % 3600) / 60)}m` : `${Math.floor(up / 60)}m`;
+  return (
+    <div className={`pulse ${quiet ? "quiet" : ""}`}>
+      <span className="pulse-dot" />
+      <b>{quiet ? "Quiet" : "Live"}</b>
+      <span title={`longest pause between equity snapshots: ${a.longestGapMin} min (a restart for an update takes under a minute)`}>trading {upText} without a break</span>
+      <span>last move {a.lastDecisionAt ? ago(a.lastDecisionAt, Date.now()) : "never"}</span>
+      <span>{a.decisions.toLocaleString()} decisions</span>
+      <span>{a.fills.toLocaleString()} trades filled</span>
+      <span>{view.lastRoundRun ? `${view.lastRoundRun.round} rating round${view.lastRoundRun.round === 1 ? "" : "s"} run` : "no rating round yet"}</span>
+      <span>colony founded {ago(view.startedAt, Date.now())}</span>
+    </div>
   );
 }
 
@@ -581,7 +613,7 @@ export function ColonyApp() {
           </div>
         </div>
       </header>
-      {error && <div className="banner">Lost the engine, showing the last read. Retrying…</div>}
+      {error ? <div className="banner">Lost the engine, showing the last read. Retrying…</div> : <Pulse view={view} />}
 
       <main className="c-main">
         <div className="c-left">

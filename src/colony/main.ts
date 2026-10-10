@@ -103,7 +103,7 @@ async function main() {
       engine: { bus, db, visitors: new Visitors(db), snapshot: () => engine!.snapshot(), health: () => engine!.health() },
       profile: () => ({ setup: false, mode: cfg.mode, links: cfg.links, colony: true, bees: [] }),
       beeImage: () => null,
-      routes: { "/colony/state": () => colonyView(colony, engine!.snapshot()) },
+      routes: { "/colony/state": () => colonyView(colony, engine!.snapshot(), engine!.health()) },
     },
     cfg.server.port,
     cfg.server.bind,

@@ -5,7 +5,7 @@ import { describeMutations, diff, GENE_NAMES, GENES, ORAKELIA } from "./genome.j
 
 type Snap = ReturnType<Engine["snapshot"]>;
 
-export function colonyView(colony: Colony, snap: Snap) {
+export function colonyView(colony: Colony, snap: Snap, health?: { uptimeS: number; marketAgeMs: number }) {
   const books = new Map(snap.bees.map((b) => [b.bee, b]));
   const now = snap.ts;
   const bee = (b: ColonyBee) => {
@@ -58,6 +58,9 @@ export function colonyView(colony: Colony, snap: Snap) {
     rules: colony.opts,
     nextRatingAt: colony.nextRatingAt(),
     nextPromotionAt: colony.nextPromotionAt(),
+    lastRoundRun: colony.lastRoundRun(),
+    firstMarksAt: colony.firstMarksAt(now),
+    activity: { ...colony.activity(), uptimeS: health?.uptimeS ?? null, marketAgeMs: health?.marketAgeMs ?? null },
     stats: {
       born: all.length,
       alive: colony.alive().length,
