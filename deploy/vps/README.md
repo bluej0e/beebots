@@ -31,8 +31,16 @@ ENGINE_PORT=8080
 ```sh
 pnpm build && pnpm --dir dashboard build
 scp -r dist package.json pnpm-lock.yaml ubuntu@<vps>:/opt/beebots/
-scp -r dashboard/dist/* ubuntu@<vps>:/srv/dashboard/
 ssh ubuntu@<vps> 'sudo systemctl restart beebots-colony'
+```
+
+`/srv/dashboard` is owned by root, so the dashboard goes up through a temp folder. A dashboard-only change needs no
+engine restart:
+
+```sh
+D=$(ssh ubuntu@<vps> 'mktemp -d')
+scp -r dashboard/dist/* ubuntu@<vps>:$D/
+ssh ubuntu@<vps> "sudo cp -r $D/. /srv/dashboard/ && sudo chown -R root:root /srv/dashboard"
 ```
 
 Run `npx pnpm install --prod --frozen-lockfile --ignore-scripts` in `/opt/beebots` when dependencies change.

@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const engine = process.env.ENGINE_URL ?? "http://127.0.0.1:8080";
-const proxy = Object.fromEntries(["/events", "/snapshot", "/history", "/equity", "/visit", "/health", "/profile", "/bee-image", "/setup", "/hive", "/keeper", "/colony/"].map((p) => [p, { target: engine, changeOrigin: false }]));
+const proxy = Object.fromEntries(["/events", "/snapshot", "/history", "/equity", "/visit", "/health", "/profile", "/bee-image", "/setup", "/hive", "/keeper", "/colony/"].map((p) => [p, { target: engine, changeOrigin: engine.startsWith("https:") }]));
 
 export default defineConfig({
   plugins: [react()],

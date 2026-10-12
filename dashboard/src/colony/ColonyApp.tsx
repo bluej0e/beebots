@@ -403,6 +403,41 @@ function Pulse({ view }: { view: ColonyView }) {
   );
 }
 
+/** Today's Jev spend, with a hover card splitting the all-time spend between workers and royals. */
+function JevStat({ view }: { view: ColonyView }) {
+  const spent = (bees: Bee[]) => bees.reduce((a, b) => a + (b.live?.totals.jevUsd ?? 0), 0);
+  const workers = spent(view.workers);
+  const royals = spent(view.royals);
+  const usd = (x: number) => `$${x.toFixed(4)}`;
+  return (
+    <div className="jev-stat" tabIndex={0}>
+      <span className="eyebrow">Jev today</span>
+      <span className={`num ${view.jev.capTripped ? "bad" : ""}`}>${view.jev.spentTodayUsd.toFixed(3)}</span>
+      <div className="jev-card" role="tooltip">
+        <div className="jev-row">
+          <span>today</span>
+          <span className="num">
+            {usd(view.jev.spentTodayUsd)} <span className="dim">of ${view.jev.dailyCapUsd}</span>
+          </span>
+        </div>
+        <div className="jev-row total">
+          <span>total spend</span>
+          <span className="num">{usd(workers + royals)}</span>
+        </div>
+        <div className="jev-row">
+          <span>workers ({view.workers.length})</span>
+          <span className="num">{usd(workers)}</span>
+        </div>
+        <div className="jev-row">
+          <span>royals ({view.royals.length})</span>
+          <span className="num">{usd(royals)}</span>
+        </div>
+        <div className="dim small">totals are since each living bee hatched</div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- the drawer ----------
 
 function Drawer({ b, view, onClose, onOpen }: { b: Bee; view: ColonyView; onClose: () => void; onOpen: (id: string) => void }) {
@@ -608,10 +643,7 @@ export function ColonyApp() {
             <span className="eyebrow">next rating</span>
             <span className="num">{until(view.nextRatingAt, now)}</span>
           </div>
-          <div>
-            <span className="eyebrow">Jev today</span>
-            <span className={`num ${view.jev.capTripped ? "bad" : ""}`}>${view.jev.spentTodayUsd.toFixed(3)}</span>
-          </div>
+          <JevStat view={view} />
         </div>
       </header>
       {error ? <div className="banner">Lost the engine, showing the last read. Retrying…</div> : <Pulse view={view} />}
@@ -647,8 +679,8 @@ export function ColonyApp() {
           <KeeperPanel view={view} onOpen={setOpen} />
           <Nursery view={view} onOpen={setOpen} />
           <RoundTable view={view} />
-          <HiveLog view={view} />
           <Graveyard view={view} onOpen={setOpen} />
+          <HiveLog view={view} />
         </aside>
       </main>
       {opened && <Drawer b={opened} view={view} onClose={() => setOpen(null)} onOpen={setOpen} />}
