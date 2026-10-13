@@ -254,7 +254,7 @@ function KeeperPanel({ view, onOpen }: { view: ColonyView; onOpen: (id: string) 
               <li key={i.gene} title={i.verdict}>
                 <span className="ins-label">{i.label}</span>
                 <span className="ins-bar">
-                  <span className={i.effect >= 0 ? "pos" : "neg"} style={{ width: `${Math.min(50, Math.abs(i.effect) * 50)}%` }} />
+                  <span className={i.effect >= 0 ? "ins-pos" : "ins-neg"} style={{ width: `${Math.min(50, Math.abs(i.effect) * 50)}%` }} />
                 </span>
                 <span className="num small">{fmtGene(view.genes.find((g) => g.name === i.gene), i.value)}</span>
               </li>
@@ -383,23 +383,42 @@ function Graveyard({ view, onOpen }: { view: ColonyView; onOpen: (id: string) =>
   );
 }
 
-/** Proof of life: is the engine actually trading, and since when. */
-function Pulse({ view }: { view: ColonyView }) {
+/** Proof of life as stat cards: is the engine actually trading, and since when. */
+function PulseStats({ view }: { view: ColonyView }) {
   const a = view.activity;
-  const quiet = a.lastDecisionAt === null || Date.now() - a.lastDecisionAt > 3 * 60_000;
-  const up = a.continuousSince ? (Date.now() - a.continuousSince) / 1000 : 0;
-  const upText = up >= 86400 ? `${(up / 86400).toFixed(1)} days` : up >= 3600 ? `${Math.floor(up / 3600)}h ${Math.floor((up % 3600) / 60)}m` : `${Math.floor(up / 60)}m`;
+  const now = Date.now();
+  const quiet = a.lastDecisionAt === null || now - a.lastDecisionAt > 3 * 60_000;
+  const up = a.continuousSince ? (now - a.continuousSince) / 1000 : 0;
+  const upText = up >= 86400 ? `${(up / 86400).toFixed(1)}d` : up >= 3600 ? `${Math.floor(up / 3600)}h ${Math.floor((up % 3600) / 60)}m` : `${Math.floor(up / 60)}m`;
   return (
-    <div className={`pulse ${quiet ? "quiet" : ""}`}>
-      <span className="pulse-dot" />
-      <b>{quiet ? "Quiet" : "Live"}</b>
-      <span title={`longest pause between equity snapshots: ${a.longestGapMin} min (a restart for an update takes under a minute)`}>trading {upText} without a break</span>
-      <span>last move {a.lastDecisionAt ? ago(a.lastDecisionAt, Date.now()) : "never"}</span>
-      <span>{a.decisions.toLocaleString()} decisions</span>
-      <span>{a.fills.toLocaleString()} trades filled</span>
-      <span>{view.lastRoundRun ? `${view.lastRoundRun.round} rating round${view.lastRoundRun.round === 1 ? "" : "s"} run` : "no rating round yet"}</span>
-      <span>colony founded {ago(view.startedAt, Date.now())}</span>
-    </div>
+    <>
+      <div className={`live-stat ${quiet ? "quiet" : ""}`} title={`trading ${upText} without a break · longest pause between equity snapshots: ${a.longestGapMin} min (a restart for an update takes under a minute)`}>
+        <span className="eyebrow">
+          <span className="pulse-dot" /> {quiet ? "quiet" : "live"}
+        </span>
+        <span className="num">{upText}</span>
+      </div>
+      <div>
+        <span className="eyebrow">last move</span>
+        <span className="num">{a.lastDecisionAt ? ago(a.lastDecisionAt, now) : "never"}</span>
+      </div>
+      <div>
+        <span className="eyebrow">decisions</span>
+        <span className="num">{a.decisions.toLocaleString()}</span>
+      </div>
+      <div>
+        <span className="eyebrow">trades</span>
+        <span className="num">{a.fills.toLocaleString()}</span>
+      </div>
+      <div>
+        <span className="eyebrow">rounds</span>
+        <span className="num">{view.lastRoundRun?.round ?? 0}</span>
+      </div>
+      <div>
+        <span className="eyebrow">founded</span>
+        <span className="num">{ago(view.startedAt, now)}</span>
+      </div>
+    </>
   );
 }
 
@@ -604,7 +623,9 @@ export function ColonyApp() {
   const workers = [...view.workers].sort((a, b) => (b.live?.pnlPct ?? 0) - (a.live?.pnlPct ?? 0));
   const all = [...view.royals, ...view.workers, ...view.nursery, ...view.graveyard];
   const opened = open ? all.find((b) => b.id === open) : undefined;
-  const colonyPnl = view.workers.reduce((a, b) => a + (b.live?.pnlUsd ?? 0), 0);
+  const pnl = (bees: Bee[]) => bees.reduce((a, b) => a + (b.live?.pnlUsd ?? 0), 0);
+  const workersPnl = pnl(view.workers);
+  const royalsPnl = pnl(view.royals);
 
   return (
     <div className="colony">
@@ -618,35 +639,40 @@ export function ColonyApp() {
             <span className="dim">royals trade the colony's best DNA · workers evolve · not financial advice</span>
           </div>
         </div>
-        <div className="c-stats">
-          <div>
-            <span className="eyebrow">workers</span>
-            <span className="num">{view.workers.length}</span>
-          </div>
-          <div>
-            <span className="eyebrow">eggs</span>
-            <span className="num">{view.stats.eggs}</span>
-          </div>
-          <div>
-            <span className="eyebrow">died</span>
-            <span className="num">{view.stats.died}</span>
-          </div>
-          <div>
-            <span className="eyebrow">top gen</span>
-            <span className="num">{view.stats.maxGeneration}</span>
-          </div>
-          <div>
-            <span className="eyebrow">workers P&amp;L</span>
-            <span className={`num ${tone(colonyPnl)}`}>{signed(colonyPnl)}</span>
-          </div>
-          <div>
-            <span className="eyebrow">next rating</span>
-            <span className="num">{until(view.nextRatingAt, now)}</span>
-          </div>
-          <JevStat view={view} />
-        </div>
       </header>
-      {error ? <div className="banner">Lost the engine, showing the last read. Retrying…</div> : <Pulse view={view} />}
+      {error && <div className="banner">Lost the engine, showing the last read. Retrying…</div>}
+      <div className="c-stats">
+        {!error && <PulseStats view={view} />}
+        <div>
+          <span className="eyebrow">royals P&amp;L</span>
+          <span className={`num ${tone(royalsPnl)}`}>{signed(royalsPnl)}</span>
+        </div>
+        <div>
+          <span className="eyebrow">workers P&amp;L</span>
+          <span className={`num ${tone(workersPnl)}`}>{signed(workersPnl)}</span>
+        </div>
+        <div>
+          <span className="eyebrow">workers</span>
+          <span className="num">{view.workers.length}</span>
+        </div>
+        <div>
+          <span className="eyebrow">eggs</span>
+          <span className="num">{view.stats.eggs}</span>
+        </div>
+        <div>
+          <span className="eyebrow">died</span>
+          <span className="num">{view.stats.died}</span>
+        </div>
+        <div>
+          <span className="eyebrow">top gen</span>
+          <span className="num">{view.stats.maxGeneration}</span>
+        </div>
+        <div>
+          <span className="eyebrow">next rating</span>
+          <span className="num">{until(view.nextRatingAt, now)}</span>
+        </div>
+        <JevStat view={view} />
+      </div>
 
       <main className="c-main">
         <div className="c-left">

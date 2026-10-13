@@ -115,19 +115,25 @@ button {
   color: var(--violet);
 }
 .c-stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.4rem, 1fr));
   gap: 0.5rem;
 }
 .c-stats > div {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 0.15rem;
   padding: 0.45rem 0.75rem;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 0.6rem;
-  min-width: 5.5rem;
+  min-width: 0;
+}
+.c-stats .num {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .c-stats .num {
   font-size: 1.05rem;
@@ -603,9 +609,8 @@ table.dna tr.changed td:nth-child(2) {
   .colony {
     padding: 1rem 1rem 1.5rem;
   }
-  .c-stats > div {
-    min-width: 0;
-    flex: 1 1 28%;
+  .c-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .comb {
     grid-template-columns: 1fr;
@@ -703,11 +708,11 @@ table.dna tr.changed td:nth-child(2) {
   bottom: 0;
   border-radius: 999px;
 }
-.ins-bar .pos {
+.ins-bar .ins-pos {
   left: 50%;
   background: var(--good-text);
 }
-.ins-bar .neg {
+.ins-bar .ins-neg {
   right: 50%;
   background: var(--critical-text);
 }
@@ -842,39 +847,34 @@ table.dna tr.changed td:nth-child(2) {
   text-decoration: line-through;
 }
 
-/* ---------- proof of life ---------- */
-.pulse {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 1.1rem;
-  padding: 0.5rem 0.85rem;
-  border-radius: 0.6rem;
+/* ---------- proof of life (the live stat card) ---------- */
+.c-stats > .live-stat {
   background: rgba(63, 207, 63, 0.07);
-  border: 1px solid rgba(63, 207, 63, 0.3);
-  font-size: 0.82rem;
-  color: var(--text-2);
+  border-color: rgba(63, 207, 63, 0.3);
+  cursor: help;
 }
-.pulse b {
+.live-stat .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   color: var(--good-text);
-  margin-left: -0.6rem;
 }
 .pulse-dot {
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   background: var(--good-text);
   box-shadow: 0 0 0 0 rgba(63, 207, 63, 0.6);
   animation: beat 2s infinite;
 }
-.pulse.quiet {
+.c-stats > .live-stat.quiet {
   background: rgba(250, 178, 25, 0.07);
   border-color: rgba(250, 178, 25, 0.35);
 }
-.pulse.quiet b {
+.live-stat.quiet .eyebrow {
   color: var(--star);
 }
-.pulse.quiet .pulse-dot {
+.live-stat.quiet .pulse-dot {
   background: var(--star);
   animation: none;
 }
@@ -1067,7 +1067,7 @@ table.dna tr.changed td:nth-child(2) {
     gap: 0.9rem;
   }
   .c-top,
-  .pulse,
+  .c-stats,
   .banner {
     flex: none;
   }
@@ -1141,16 +1141,7 @@ table.dna tr.changed td:nth-child(2) {
     text-overflow: ellipsis;
   }
   .c-stats {
-    flex-wrap: nowrap;
-    flex: none;
-  }
-  .c-stats > div {
-    min-width: 4.6rem;
-  }
-  .pulse {
-    flex-wrap: nowrap;
-    overflow: hidden;
-    white-space: nowrap;
+    grid-template-columns: repeat(auto-fit, minmax(5.2rem, 1fr));
   }
   .comb {
     min-height: 10rem;
@@ -1189,9 +1180,6 @@ table.dna tr.changed td:nth-child(2) {
   }
   .c-stats .num {
     font-size: 0.95rem;
-  }
-  .pulse {
-    padding: 0.35rem 0.7rem;
   }
   .royal-dna {
     display: none;
