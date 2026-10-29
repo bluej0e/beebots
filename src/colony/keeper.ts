@@ -1,7 +1,8 @@
-// The beekeeper's notebook: what is working in the hive. Every rated (bee, round) pair is a sample: the bee's DNA
-// and the score it got that round. Dead bees count too: what killed them is knowledge. For each gene the keeper
-// asks "do the bees with more of this score better?" and writes down the value the winners lean towards. Put
-// together, those values are his blend: the DNA he would build a bee from. The Prince (his apprentice) trades it.
+// The beekeeper's notebook: what is working in the hive. Every rated bee is one sample: its DNA and its mean score
+// over the learning window (one bee rated 20 times is still one bee: counting each rating would make 12 bees look
+// like 240). Dead bees count too: what killed them is knowledge. For each gene the keeper asks "do the bees with
+// more of this score better?" and writes down the value the winners lean towards. Put together, those values are
+// his blend: Orakelia with every clear lesson applied. The Prince (his apprentice) trades it.
 import { GENE_NAMES, GENES, normalize, type GeneName, type GeneSpec, type Genome } from "./genome.js";
 
 export interface Sample {
@@ -30,10 +31,10 @@ export interface Lessons {
   blend: Genome;
 }
 
-/** Below this many samples the keeper has nothing to say about a gene. */
-export const MIN_SAMPLES = 12;
-/** An effect smaller than this is noise to him. */
-export const MIN_EFFECT = 0.15;
+/** Below this many rated bees the keeper has nothing to say about a gene. */
+export const MIN_SAMPLES = 8;
+/** An effect smaller than this is noise to him: with ~20 bees and 26 genes, weaker links turn up by chance alone. */
+export const MIN_EFFECT = 0.3;
 
 const norm = (s: GeneSpec, v: number) => {
   if (s.kind !== "num" && s.kind !== "int") return 0;
@@ -58,10 +59,21 @@ function pearson(xs: number[], ys: number[]): number {
 
 const fmt = (s: GeneSpec, v: Genome[GeneName]) => (typeof v === "boolean" ? (v ? "yes" : "no") : s.kind === "num" ? Number((v as number).toFixed(s.dp)) : v);
 
+/** Ratings folded to one sample per bee: its DNA and its mean score over the window. */
+export function perBee(ratings: Array<{ bee: string; genome: Genome; score: number }>): Sample[] {
+  const by = new Map<string, { genome: Genome; sum: number; n: number }>();
+  for (const r of ratings) {
+    const x = by.get(r.bee) ?? by.set(r.bee, { genome: r.genome, sum: 0, n: 0 }).get(r.bee)!;
+    x.sum += r.score;
+    x.n++;
+  }
+  return [...by.values()].map((x) => ({ genome: x.genome, score: x.sum / x.n }));
+}
+
 export function learn(samples: Sample[], base: Genome): Lessons {
   const insights: Insight[] = [];
   const blend = { ...base } as Record<GeneName, Genome[GeneName]>;
-  const bees = new Set(samples.map((s) => JSON.stringify(s.genome))).size;
+  const bees = samples.length;
   if (samples.length >= MIN_SAMPLES) {
     const scores = samples.map((s) => s.score);
     const median = [...scores].sort((a, b) => a - b)[Math.floor(scores.length / 2)]!;
@@ -72,11 +84,16 @@ export function learn(samples: Sample[], base: Genome): Lessons {
       const values = samples.map((s) => s.genome[g]);
       if (new Set(values.map(String)).size < 2) continue; // everyone has the same value: nothing to learn
       if (spec.kind === "num" || spec.kind === "int") {
-        const effect = pearson(
+        const r = pearson(
           samples.map((s) => norm(spec, s.genome[g] as number)),
           scores,
         );
         const avg = (xs: Sample[]) => xs.reduce((a, s) => a + (s.genome[g] as number), 0) / (xs.length || 1);
+        // A lesson has to show two ways: the correlation and the top-half/bottom-half split must point the same
+        // way. When they disagree ("lower is winning: top half 13.4, bottom half 12") it is noise, and he says so.
+        const split = avg(top) - avg(bottom);
+        const agree = split !== 0 && Math.sign(split) === Math.sign(r);
+        const effect = agree ? r : 0;
         // The winners' value: the score-weighted mean of the top half (better scores pull harder).
         const lo = Math.min(...top.map((s) => s.score));
         const w = top.map((s) => s.score - lo + 1e-6);
@@ -84,8 +101,9 @@ export function learn(samples: Sample[], base: Genome): Lessons {
         let v = top.reduce((a, s, i) => a + (s.genome[g] as number) * w[i]!, 0) / (sum || 1);
         v = spec.kind === "int" ? Math.round(v) : Number(v.toFixed(spec.dp));
         v = Math.max(spec.min, Math.min(spec.max, v));
-        const dir = effect > 0 ? "higher" : "lower";
-        insights.push({ gene: g, label: spec.label, effect, value: v, samples: samples.length, verdict: `${dir} ${spec.label} is winning: top half ${fmt(spec, avg(top) as never)}, bottom half ${fmt(spec, avg(bottom) as never)}` });
+        const halves = `top half ${fmt(spec, avg(top) as never)}, bottom half ${fmt(spec, avg(bottom) as never)}`;
+        const verdict = agree ? `${effect > 0 ? "higher" : "lower"} ${spec.label} is winning: ${halves}` : `${spec.label}: no clear lesson (${halves})`;
+        insights.push({ gene: g, label: spec.label, effect, value: v, samples: samples.length, verdict });
         if (Math.abs(effect) >= MIN_EFFECT) blend[g] = v;
       } else {
         const groups = new Map<string, number[]>();

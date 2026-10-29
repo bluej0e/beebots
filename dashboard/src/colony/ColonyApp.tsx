@@ -318,7 +318,7 @@ function RoundTable({ view }: { view: ColonyView }) {
       )}
       {!r ? (
         <p className="dim small">
-          Every {view.rules.rateEveryHours}h each worker older than {view.rules.minAgeHours}h is scored on its last {view.rules.rateWindowHours}h: return minus half its worst drawdown. Best gets a star, worst an X.
+          Every {view.rules.rateEveryHours}h each worker older than {view.rules.minAgeHours}h is scored on the {view.rules.rateWindowHours}h since the last round: return minus half its worst drawdown. The best gets a star if it gained, the worst an X if it lost.
         </p>
       ) : (
         <table className="round">

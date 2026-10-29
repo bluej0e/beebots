@@ -7,7 +7,7 @@
 //   SETTINGS_PATH    a Setup file to borrow the Jev key from (or set TYPESAFE_API_KEY)
 //   COLONY_WORKERS, COLONY_RATE_EVERY_HOURS, COLONY_RATE_WINDOW_HOURS, COLONY_MIN_AGE_HOURS,
 //   COLONY_STARS_TO_BREED, COLONY_XS_TO_DIE, COLONY_PROMOTE_EVERY_HOURS, COLONY_IMMIGRANT_RATE,
-//   COLONY_EGG_WAIT_HOURS, COLONY_MAX_NURSERY, COLONY_LEARN_WINDOW_HOURS,
+//   COLONY_EGG_WAIT_HOURS, COLONY_MAX_NURSERY, COLONY_LEARN_WINDOW_HOURS, COLONY_MAX_HIVE_SHARE (0 = off),
 //   COLONY_ROYAL_EQUITY_USD (default 333), COLONY_WORKER_EQUITY_USD (default 100): paper money each bee starts with
 //   COLONY_KEEPER_CLAUDE=1   the beekeeper's daily visit also asks Claude (the local `claude` CLI) for a diary entry,
 //                            a quip and up to 3 gene ideas for the Prince. Without it he writes his own plain diary.
@@ -51,6 +51,7 @@ function opts(env: NodeJS.ProcessEnv): ColonyOpts {
     eggWaitHours: n("COLONY_EGG_WAIT_HOURS", DEFAULT_OPTS.eggWaitHours, 0),
     maxNursery: Math.round(n("COLONY_MAX_NURSERY", DEFAULT_OPTS.maxNursery, 0)),
     learnWindowHours: n("COLONY_LEARN_WINDOW_HOURS", DEFAULT_OPTS.learnWindowHours, 4),
+    maxHiveShare: Math.min(1, n("COLONY_MAX_HIVE_SHARE", DEFAULT_OPTS.maxHiveShare, 0)),
     royalDecideMs: 0,
     royalEquityUsd: n("COLONY_ROYAL_EQUITY_USD", DEFAULT_OPTS.royalEquityUsd, 10),
     workerEquityUsd: n("COLONY_WORKER_EQUITY_USD", DEFAULT_OPTS.workerEquityUsd, 10),

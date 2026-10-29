@@ -21,7 +21,7 @@ import type { Roster } from "../engine.js";
 import { log } from "../log.js";
 import { colonyBrain, knobsFor } from "./brain.js";
 import { crossover, describeMutations, diff, GENES, mutate, ORAKELIA, parseGenome, randomGenome, type GeneName, type Genome, type Guide, type Rng } from "./genome.js";
-import { learn, MIN_EFFECT, type Lessons, type Sample } from "./keeper.js";
+import { learn, MIN_EFFECT, MIN_SAMPLES, perBee, type Lessons, type Sample } from "./keeper.js";
 import { beeName } from "./names.js";
 
 const SCHEMA = `
@@ -92,12 +92,14 @@ export interface ColonyOpts {
   immigrantRate: number;
   /** How far back the beekeeper learns from (hours of rating rounds). */
   learnWindowHours: number;
+  /** The hive spreads its bets: a bee does not open a coin that this share of the other bees already holds. 0 = off. */
+  maxHiveShare: number;
 }
 
 export const DEFAULT_OPTS: ColonyOpts = {
   workers: 12,
-  rateEveryHours: 4,
-  rateWindowHours: 24,
+  rateEveryHours: 8,
+  rateWindowHours: 8,
   minAgeHours: 24,
   starsToBreed: 5,
   xsToDie: 5,
@@ -109,6 +111,7 @@ export const DEFAULT_OPTS: ColonyOpts = {
   workerEquityUsd: 100,
   immigrantRate: 0.2,
   learnWindowHours: 7 * 24,
+  maxHiveShare: 0.34,
 };
 
 export interface RoyalRule {
@@ -240,7 +243,7 @@ export class Colony implements Roster {
     const g = b?.genome ?? ORAKELIA;
     const hit = this.brains.get(id);
     if (hit && hit.genome === g) return hit.brain;
-    const brain = colonyBrain(b?.name ?? id, g);
+    const brain = colonyBrain(b?.name ?? id, g, this.opts.maxHiveShare);
     this.brains.set(id, { genome: g, brain });
     return brain;
   }
@@ -412,13 +415,14 @@ export class Colony implements Roster {
 
   // ---------- the beekeeper's notebook ----------
 
-  /** What the keeper has learned from every rating in his window (cached per round). */
+  /** What the keeper has learned from every bee rated in his window, one sample per bee (cached per round). */
   lessons(now = this.now()): Lessons {
     const round = Number(this.db.getMeta("colony_round") ?? 0);
     if (this.lessonsCache && this.lessonsCache.at === round) return this.lessonsCache.lessons;
     const rows = this.db.raw.prepare(`SELECT bee, score FROM colony_ratings WHERE ts >= ?`).all(now - this.opts.learnWindowHours * HOUR) as Array<{ bee: string; score: number }>;
-    const samples: Sample[] = rows.map((r) => ({ genome: this.bees.get(r.bee)?.genome, score: r.score })).filter((s): s is Sample => !!s.genome);
-    const lessons = learn(samples, this.get("prince")?.genome ?? ORAKELIA);
+    const rated = rows.map((r) => ({ bee: r.bee, genome: this.bees.get(r.bee)?.genome, score: r.score })).filter((s): s is Sample & { bee: string } => !!s.genome);
+    // The blend stands on Orakelia, never on yesterday's Prince: a lesson that fades takes its change away with it.
+    const lessons = learn(perBee(rated), ORAKELIA);
     this.lessonsCache = { at: round, lessons };
     return lessons;
   }
@@ -442,7 +446,10 @@ export class Colony implements Roster {
   rate(now: number): void {
     const round = Number(this.db.getMeta("colony_round") ?? 0) + 1;
     this.db.setMeta("colony_round", String(round));
-    const from = now - this.opts.rateWindowHours * HOUR;
+    // A round scores only what happened since the last one: windows never overlap, so five stars are five
+    // different stretches of trading, never one good day judged five times.
+    const last = Number(this.db.getMeta("colony_last_round_at") ?? 0);
+    const from = Math.max(now - this.opts.rateWindowHours * HOUR, last);
     const eligible = this.workers().filter((b) => now - b.bornAt >= this.opts.minAgeHours * HOUR);
     const scores = eligible.map((b) => this.scoreOver(b.id, from, now)).filter((s): s is Score => s !== null);
     scores.sort((a, b) => b.score - a.score);
@@ -452,10 +459,12 @@ export class Colony implements Roster {
       const first = this.firstMarksAt(now + 1);
       this.note(now, "round", null, `round ${round} ran: ${scores.length ? `only ${scores.length} worker${scores.length === 1 ? " is" : "s are"}` : "no worker is"} ${this.opts.minAgeHours}h old yet, so no stars or X's${first ? ` (first marks at ${new Date(first).toISOString().slice(11, 16)} UTC)` : ""}`);
     }
+    // A star is for making money, an X for losing it: in a round where everyone lost there is no star, and where
+    // everyone gained there is no X. Otherwise "lost the least" breeds and "gained the least" dies.
     const marks = new Map<string, "star" | "x">();
     if (scores.length >= 3) {
-      marks.set(scores[0]!.bee, "star");
-      marks.set(scores[scores.length - 1]!.bee, "x");
+      if (scores[0]!.score > 0) marks.set(scores[0]!.bee, "star");
+      if (scores[scores.length - 1]!.score < 0) marks.set(scores[scores.length - 1]!.bee, "x");
     }
     const ins = this.db.raw.prepare(`INSERT INTO colony_ratings (round, ts, bee, score, ret_pct, dd_pct, rank, mark) VALUES (?,?,?,?,?,?,?,?)`);
     scores.forEach((s, i) => {
@@ -569,24 +578,36 @@ export class Colony implements Roster {
     royal.generation = donor?.generation ?? royal.generation;
     royal.mutations = changes;
     this.save(royal);
+    this.db.setMeta(`colony_dna_since_${royal.id}`, String(now));
     this.note(now, "promotion", royal.id, `${why}: ${changes}`);
   }
 
+  /** When a royal got the DNA it trades now (its birth, until the keeper changes it). */
+  dnaSince(id: string): number {
+    return Number(this.db.getMeta(`colony_dna_since_${id}`) ?? 0) || (this.bees.get(id)?.bornAt ?? 0);
+  }
+
+  /**
+   * The Queen takes a worker's DNA only after she has run her own for the full 3 days: comparing a day of one DNA
+   * and two of another against a worker's three never told anyone anything. The donor must be in profit, not just
+   * ahead of her: she is the champion, not the least bad.
+   */
   private promoteQueen(queen: ColonyBee, now: number): void {
     const rule = ROYAL_RULES.queen;
+    if (now - this.dnaSince(queen.id) < rule.horizonHours * HOUR) return;
     const from = now - rule.horizonHours * HOUR;
     const mine = this.scoreOver(queen.id, from, now);
     if (!mine) return;
     const best = this.workers()
       .filter((w) => now - w.bornAt >= rule.horizonHours * HOUR && diff(w.genome, queen.genome).length > 0)
       .map((w) => ({ w, s: this.scoreOver(w.id, from, now) }))
-      .filter((x): x is { w: ColonyBee; s: Score } => x.s !== null)
+      .filter((x): x is { w: ColonyBee; s: Score } => x.s !== null && x.s.score > 0)
       .sort((a, b) => b.s.score - a.s.score)[0];
     if (!best || best.s.score < mine.score + rule.marginPct) return;
     this.give(queen, best.w, best.w.genome, now, `the beekeeper gave the Queen ${best.w.name}'s DNA (${best.s.score.toFixed(2)} vs her ${mine.score.toFixed(2)} over 3 days)`);
   }
 
-  /** The King wants consistency: the week as a whole by 5 points, and at least 5 of its 7 single days. */
+  /** The King wants consistency: the week as a whole by 5 points, at least 5 of its 7 single days, and a profit. */
   private promoteKing(king: ColonyBee, now: number): void {
     const rule = ROYAL_RULES.king;
     const from = now - rule.horizonHours * HOUR;
@@ -604,7 +625,7 @@ export class Colony implements Roster {
         }).length;
         return { w, s, won };
       })
-      .filter((x): x is { w: ColonyBee; s: Score; won: number } => x.s !== null && x.s.score >= mine.score + rule.marginPct && x.won >= KING_DAYS_TO_WIN)
+      .filter((x): x is { w: ColonyBee; s: Score; won: number } => x.s !== null && x.s.score > 0 && x.s.score >= mine.score + rule.marginPct && x.won >= KING_DAYS_TO_WIN)
       .sort((a, b) => b.won - a.won || b.s.score - a.s.score)[0];
     if (!best) return;
     this.give(king, best.w, best.w.genome, now, `the King took ${best.w.name}'s DNA: ${best.s.score.toFixed(2)} vs ${mine.score.toFixed(2)} over the week, won ${best.won} of 7 days`);
@@ -614,11 +635,11 @@ export class Colony implements Roster {
   private teachPrince(prince: ColonyBee, now: number): void {
     const l = this.lessons(now);
     const top = l.insights.filter((i) => Math.abs(i.effect) >= MIN_EFFECT).slice(0, 3);
-    const diary = l.samples < 12 ? `Too early to say what works: ${l.samples} ratings so far. The Prince keeps his DNA.` : top.length ? `What is working: ${top.map((i) => i.verdict).join("; ")}.` : `No gene stands out yet over ${l.samples} ratings. The Prince keeps his DNA.`;
-    if (top.length && diff(prince.genome, l.blend).length) this.give(prince, null, l.blend, now, "the beekeeper retaught the Prince");
+    const diary = l.samples < MIN_SAMPLES ? `Too early to say what works: ${l.samples} bees rated so far. The Prince keeps his DNA.` : top.length ? `What is working: ${top.map((i) => i.verdict).join("; ")}.` : `No gene stands out yet over ${l.samples} rated bees. The Prince keeps his DNA.`;
+    if (diff(prince.genome, l.blend).length) this.give(prince, null, l.blend, now, top.length ? "the beekeeper retaught the Prince" : "no lesson holds any more: the Prince is back on Orakelia");
     this.writeDiary(now, diary, null);
     const advisor = this.advisor;
-    if (!advisor || l.samples < 12) return;
+    if (!advisor || l.samples < MIN_SAMPLES) return;
     const standings = this.workers().map((w) => ({ name: w.name, score: w.lastScore, stars: w.stars, xs: w.xs, genome: w.genome }));
     void advisor({ lessons: l, prince: prince.genome, standings })
       .then((a) => {

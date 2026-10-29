@@ -90,6 +90,16 @@ interface OpenCheck {
 }
 
 /** Spread gate, funding veto, min size and the size cap for an open/switch/add. */
+/**
+ * The most notional a stop `stopPx` away from `px` allows: the hit costs at most MAX_RISK_PER_TRADE_PCT of equity.
+ * A wide stop (a volatile coin) means a small position; no stop means no limit from this rule (the leverage cap
+ * still applies).
+ */
+export function riskCapUsd(ctx: BeeContext, px: number, stopPx: number | null): number {
+  const dist = stopPx === null || !(px > 0) ? 0 : Math.abs(px - stopPx) / px;
+  return dist > 0 ? (ctx.bee.equityUsd * ctx.cfg.risk.maxRiskPerTradePct) / 100 / dist : Infinity;
+}
+
 function checkOpen(intent: Intent, input: RiskInput, conviction: number): OpenCheck {
   const { ctx, brain, sizeMult } = input;
   const { bee, view, knobs } = ctx;
@@ -102,7 +112,9 @@ function checkOpen(intent: Intent, input: RiskInput, conviction: number): OpenCh
     const inst = view.instruments.get(p.instId);
     if (!s || !inst) return { ok: false, why: "no_market_data" };
     if (s.spreadBp > knobs.spreadGateBps) return { ok: false, why: `spread_gate ${p.coin} ${s.spreadBp.toFixed(1)}bp` };
-    const room = max - positionNotional(p, s.mid, inst.ctVal);
+    const held = positionNotional(p, s.mid, inst.ctVal);
+    // The whole position, adds included, stays inside the risk budget measured from where its stop is now.
+    const room = Math.min(max, riskCapUsd(ctx, s.mid, brain.trail?.(ctx) ?? p.stopPx)) - held;
     const n = Math.min(intent.sizeFrac * maxNotionalUsd(ctx) * sizeMult, room);
     const minUsd = inst.minSz * inst.ctVal * s.mid;
     if (n < minUsd) return { ok: false, why: "size_cap" };
@@ -118,7 +130,7 @@ function checkOpen(intent: Intent, input: RiskInput, conviction: number): OpenCh
     return { ok: false, why: `funding_veto ${s.coin} z=${s.fundingZ.toFixed(1)}` };
   }
   const frac = Math.max(0, Math.min(1, brain.sizeFrac(intent, conviction, ctx)));
-  const n = Math.min(frac * max, max);
+  const n = Math.min(frac * max, max, riskCapUsd(ctx, s.mid, brain.stopFor(intent.instId, intent.side, s.mid, ctx)));
   const minUsd = inst.minSz * inst.ctVal * s.mid;
   if (n < minUsd) return { ok: false, why: `below_min_size ${s.coin} $${n.toFixed(2)} < $${minUsd.toFixed(2)}` };
   return { ok: true, notionalUsd: n };

@@ -321,6 +321,10 @@ export class Engine {
       knobs: this.knobs(id),
       now,
       uplR: p && p.riskUsd > 0 ? bee.uplUsd / p.riskUsd : null,
+      crowd: (instId) => {
+        const others = this.ids().filter((x) => x !== id && this.bees[x]);
+        return others.length ? others.filter((x) => this.bees[x]!.position?.instId === instId).length / others.length : 0;
+      },
     };
   }
 

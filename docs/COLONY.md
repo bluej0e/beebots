@@ -27,11 +27,14 @@ Prince 12 h with a 4x stop until the keeper has something to teach him. Workers:
 
 ## A rating round
 
-Every 4 hours (`COLONY_RATE_EVERY_HOURS`):
+Every 8 hours (`COLONY_RATE_EVERY_HOURS`):
 
-1. Every worker at least 24 hours old (`COLONY_MIN_AGE_HOURS`) is scored on its last 24 hours
-   (`COLONY_RATE_WINDOW_HOURS`): **return % minus half its worst drawdown %** in that window.
-2. The best gets a ★, the worst a ✕.
+1. Every worker at least 24 hours old (`COLONY_MIN_AGE_HOURS`) is scored on the time since the last round, at most
+   8 hours (`COLONY_RATE_WINDOW_HOURS`): **return % minus half its worst drawdown %** in that window. Windows never
+   overlap, so five stars are five different stretches of trading, never one good day judged five times (the first
+   colony rated a 24 h window every 4 h, and one trade was worth five marks).
+2. The best gets a ★ if its score is positive, the worst a ✕ if its score is negative. In a round where everyone lost
+   nobody breeds for losing the least; where everyone gained nobody dies for gaining the least.
 3. 5 ✕ → dies. Its position is closed through the normal ledger, then it leaves the engine.
 4. 5 ★ → lays an egg: a copy of its DNA with about 10% of genes nudged (the beekeeper tilts which ones and which way).
    The parent's stars reset and it earns a `+1` tag per egg.
@@ -43,10 +46,12 @@ Every 4 hours (`COLONY_RATE_EVERY_HOURS`):
 
 ## The beekeeper
 
-He learns from every rating in the last 7 days (`COLONY_LEARN_WINDOW_HOURS`), dead bees included: for each gene,
-do the bees with more of it score better? Number genes by correlation with score, yes/no and choice genes by the
-average score of each value. Where the link is clear he writes down the value the winners lean towards. Together
-those values are his **blend**. He then:
+He learns from every bee rated in the last 7 days (`COLONY_LEARN_WINDOW_HOURS`), dead bees included, one sample per
+bee (its mean score over the window; a bee rated 20 times is still one bee). For each gene, do the bees with more
+of it score better? Number genes by correlation with score, confirmed by the top half / bottom half split pointing
+the same way; yes/no and choice genes by the average score of each value. He needs 8 rated bees and an effect of
+at least 0.3 before he calls a lesson clear and writes down the value the winners lean towards. Together those
+values laid over Orakelia are his **blend**: a lesson that fades takes its change away with it. He then:
 
 - **tilts every mutation**: genes he has a lesson on are picked up to 2x as often, and their random step leans towards
   the winners' value. It is a tilt, not an order: steps still go the other way some of the time.
@@ -61,7 +66,11 @@ Every round, egg, birth, death and promotion is in the hive log (`colony_log` ta
 ## The genes
 
 Every Momentum constant is a gene (`src/colony/genome.ts`). Nothing in the genome can touch leverage past
-`MAX_LEVERAGE`, the daily loss stop, retirement, or the mode: those stay in `config.ts` and the risk layer.
+`MAX_LEVERAGE`, the risk per trade (`MAX_RISK_PER_TRADE_PCT`, 2%: a position is sized so its initial stop costs at
+most that share of equity, so a volatile coin means a small position), the daily loss stop, retirement, or the
+mode: those stay in `config.ts` and the risk layer. The hive also spreads its bets: a bee does not open a coin that
+more than a third of the other bees already hold (`COLONY_MAX_HIVE_SHARE`), because twelve bees in one coin teach
+the colony nothing but that coin's luck.
 
 | Group | Genes |
 |---|---|

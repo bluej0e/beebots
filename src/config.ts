@@ -81,6 +81,7 @@ const EnvSchema = z.object({
   MAX_LEVERAGE: num(2),
   MARGIN_MODE: z.literal("isolated").optional().default("isolated"),
   MAX_NOTIONAL_USD_PER_BEE: num(700),
+  MAX_RISK_PER_TRADE_PCT: num(2),
   DAILY_LOSS_STOP_PCT: num(8),
   BEE_RETIRE_AT_PCT: num(40),
   MAX_FLAT_MINUTES: num(30),
@@ -204,6 +205,8 @@ export interface Config {
     startEquityUsd: number;
     maxLeverage: number;
     maxNotionalUsdPerBee: number;
+    /** A position is sized so its initial stop costs at most this share of equity. Hard rule, not a gene. */
+    maxRiskPerTradePct: number;
     dailyLossStopPct: number;
     retireAtPct: number;
     maxFlatMinutes: number;
@@ -249,6 +252,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   }
 
   if (e.MAX_LEVERAGE > 2 || e.MAX_LEVERAGE <= 0) throw new ConfigError("MAX_LEVERAGE must be in (0, 2]. Hard rule 3.");
+  if (!(e.MAX_RISK_PER_TRADE_PCT > 0) || e.MAX_RISK_PER_TRADE_PCT > e.DAILY_LOSS_STOP_PCT) throw new ConfigError("MAX_RISK_PER_TRADE_PCT must be above 0 and at most DAILY_LOSS_STOP_PCT");
   if (e.MAX_FLAT_MINUTES < 0) throw new ConfigError("MAX_FLAT_MINUTES must be >= 0");
   if (e.BEEKEEPER_WEBHOOK_URL && !/^https:\/\/|^http:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(e.BEEKEEPER_WEBHOOK_URL))
     throw new ConfigError("BEEKEEPER_WEBHOOK_URL must start with https:// (or http://127.0.0.1 for a Beekeeper on this machine)");
@@ -320,6 +324,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       startEquityUsd: e.BEE_START_EQUITY_USD,
       maxLeverage: e.MAX_LEVERAGE,
       maxNotionalUsdPerBee: e.MAX_NOTIONAL_USD_PER_BEE,
+      maxRiskPerTradePct: e.MAX_RISK_PER_TRADE_PCT,
       dailyLossStopPct: e.DAILY_LOSS_STOP_PCT,
       retireAtPct: e.BEE_RETIRE_AT_PCT,
       maxFlatMinutes: e.MAX_FLAT_MINUTES,

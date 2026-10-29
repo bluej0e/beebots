@@ -90,6 +90,17 @@ describe("colony brain", () => {
     expect(b.rulesOnly).toBe(true);
     expect(Object.keys(b.menu(ctx))[0]).toBe("APE_TIA");
   });
+
+  it("the hive spreads its bets: a coin a third of the other bees hold is not opened, by choice or by force", () => {
+    const crowd = (instId: string) => (instId === "PEPE-USDT-SWAP" ? 0.5 : 0);
+    const flat = { bee: { position: null, top1: { coin: null, streak: 0, rankedAt: 0 } }, view, now: 0, crowd } as never;
+    const b = colonyBrain("Test", { ...ORAKELIA, useJev: false }, 0.34);
+    expect(Object.keys(b.menu(flat))).toEqual(["APE_TIA", "APE_BTC"]);
+    expect(b.forcedEntry(flat)!.instId).toBe("TIA-USDT-SWAP");
+    // With the rule off, or the crowd under the line, PEPE leads as before.
+    expect(Object.keys(colonyBrain("Test", { ...ORAKELIA, useJev: false }).menu(flat))[0]).toBe("APE_PEPE");
+    expect(Object.keys(colonyBrain("Test", { ...ORAKELIA, useJev: false }, 0.6).menu(flat))[0]).toBe("APE_PEPE");
+  });
 });
 
 describe("colony", () => {
@@ -241,11 +252,90 @@ describe("colony", () => {
   it("the first tick only sets the clocks", () => {
     const { colony, at } = make();
     colony.tick();
-    expect(colony.nextRatingAt()).toBe(T0 + 4 * HOUR);
+    const every = DEFAULT_OPTS.rateEveryHours * HOUR;
+    expect(colony.nextRatingAt()).toBe(T0 + every);
     expect(colony.nextPromotionAt()).toBe(T0 + 24 * HOUR);
-    at(T0 + 4 * HOUR);
+    at(T0 + every);
     colony.tick();
-    expect(colony.nextRatingAt()).toBe(T0 + 8 * HOUR);
+    expect(colony.nextRatingAt()).toBe(T0 + 2 * every);
+  });
+
+  it("a round scores only the time since the last round: one bad day is one X, not five", () => {
+    const c = make(2);
+    const [a, ...rest] = c.colony.workers();
+    const t1 = T0 + 25 * HOUR;
+    // Up to t1 everyone is flat but A, which loses 10% over its last 8 h.
+    for (const w of rest) curve(c.db, w.id, T0, t1, 0);
+    curve(c.db, a!.id, T0, t1 - 8 * HOUR, 0);
+    curve(c.db, a!.id, t1 - 8 * HOUR, t1, -10);
+    c.at(t1);
+    c.colony.rate(t1);
+    expect(c.colony.get(a!.id)!.xs).toBe(1);
+    // In the 4 h after that round A climbs back 5%. An overlapping 8 h window would still show a loss; the round
+    // since t1 shows a gain, and A is the best of a flat field.
+    const t2 = t1 + 4 * HOUR;
+    for (const w of rest) curve(c.db, w.id, t1, t2, 0);
+    for (let t = t1 + HOUR; t <= t2; t += HOUR) c.db.insertEquity(a!.id, t, 299.7 * (1 + (0.05 * (t - t1)) / (t2 - t1)), 333, 0);
+    c.at(t2);
+    c.colony.rate(t2);
+    expect(c.colony.get(a!.id)!.xs).toBe(1);
+    expect(c.colony.get(a!.id)!.stars).toBe(1);
+    expect(c.colony.lastRound()!.scores.find((s) => s.bee === a!.id)!.retPct).toBeGreaterThan(4);
+  });
+
+  it("no star without a gain, no X without a loss", () => {
+    const c = make(3);
+    const ws = c.colony.workers();
+    const t = T0 + 25 * HOUR;
+    round(c, t, (id) => -1 - ws.findIndex((w) => w.id === id)); // everyone lost
+    expect(ws.reduce((n, w) => n + c.colony.get(w.id)!.stars, 0)).toBe(0);
+    expect(ws.reduce((n, w) => n + c.colony.get(w.id)!.xs, 0)).toBe(1);
+    round(c, t + 25 * HOUR, (id) => 1 + ws.findIndex((w) => w.id === id)); // everyone gained
+    expect(ws.reduce((n, w) => n + c.colony.get(w.id)!.stars, 0)).toBe(1);
+    expect(ws.reduce((n, w) => n + c.colony.get(w.id)!.xs, 0)).toBe(1);
+  });
+
+  it("the keeper counts a bee once however often it was rated, and his blend stands on Orakelia", () => {
+    const c = make(9);
+    let t = T0;
+    for (let r = 0; r < 4; r++) round(c, (t += 25 * HOUR), (id) => 10 - c.colony.get(id)!.genome.minHoldHours / 3);
+    const l = c.colony.lessons(t);
+    expect(l.samples).toBe(c.colony.workers().length);
+    for (const g of GENE_NAMES) if (!l.insights.some((i) => i.gene === g && Math.abs(i.effect) >= 0.3)) expect(l.blend[g]).toBe(ORAKELIA[g]);
+    // A number gene whose correlation and half-split disagree is no lesson at all.
+    expect(l.insights.filter((i) => i.verdict.includes("no clear lesson")).every((i) => i.effect === 0)).toBe(true);
+  });
+
+  it("the Queen keeps a DNA for its full 3 days and takes only a profitable one; the King too", () => {
+    const c = make(9);
+    const ws = c.colony.workers();
+    const t = T0 + 169 * HOUR;
+    for (const b of c.colony.alive()) curve(c.db, b.id, T0, t, b.id === ws[3]!.id ? 15 : 1);
+    c.at(t);
+    c.colony.promote(t);
+    expect(c.colony.get("queen")!.genome).toEqual(ws[3]!.genome);
+    expect(c.colony.dnaSince("queen")).toBe(t);
+    // A day later another worker is far ahead over 3 days: she has only run her new DNA for a day, so she keeps it.
+    const t2 = t + 24 * HOUR;
+    for (const b of c.colony.alive()) curve(c.db, b.id, t, t2, b.id === ws[5]!.id ? 30 : -5);
+    c.at(t2);
+    c.colony.promote(t2);
+    expect(c.colony.get("queen")!.genome).toEqual(ws[3]!.genome);
+    // Three days in: she may compare again, but a donor that lost (least) is no champion.
+    const t3 = t + 72 * HOUR;
+    for (const b of c.colony.alive()) curve(c.db, b.id, t2, t3, b.id === ws[5]!.id ? -1 : -20);
+    c.at(t3);
+    c.colony.promote(t3);
+    expect(c.colony.get("queen")!.genome).toEqual(ws[3]!.genome);
+    expect(c.colony.get("king")!.genome).toEqual(ws[3]!.genome);
+
+    // The King never takes a losing donor either, however consistently it beat him.
+    const d = make(9);
+    const loser = d.colony.workers()[2]!;
+    for (const b of d.colony.alive()) curve(d.db, b.id, T0, t, b.id === loser.id ? -1 : -30);
+    d.at(t);
+    d.colony.promote(t);
+    expect(d.colony.get("king")!.genome).toEqual(ORAKELIA);
   });
 });
 

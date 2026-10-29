@@ -5,7 +5,7 @@ import { bizzy } from "../src/bees/bizzy.js";
 import { boozy } from "../src/bees/boozy.js";
 import { breezy } from "../src/bees/breezy.js";
 import type { BeeBrain, BeeContext, Intent } from "../src/bees/types.js";
-import { applyRisk, evaluateCaps, type JevStatus, type Proposal, type RiskInput } from "../src/risk.js";
+import { applyRisk, evaluateCaps, riskCapUsd, type JevStatus, type Proposal, type RiskInput } from "../src/risk.js";
 import { bee, coin, ctx, NOW, position, testConfig, trend, view } from "./fixtures.js";
 
 const open = (instId: string, side: "long" | "short" = "long", setup: "strict" | "loose" = "strict", sizeFrac = 1): Intent => ({ kind: "open", instId, side, sizeFrac, setup });
@@ -17,6 +17,8 @@ function run(c: BeeContext, brain: BeeBrain, proposal: Proposal | null, jev: Jev
 
 const SOL = coin("SOL");
 const V = view([SOL, coin("BTC", { trend: trend({ score: 5 }) }, 80000), coin("ETH", { trend: trend({ score: -2 }) }, 2700)]);
+/** The per-trade risk rule loosened to the daily stop, so the leverage ceilings below are what binds. */
+const LEVERAGE_ONLY = testConfig({ MAX_RISK_PER_TRADE_PCT: "8" });
 
 describe("caps", () => {
   it("daily loss stop trips at -8% and stays quiet at -7.9%", () => {
@@ -188,7 +190,7 @@ describe("breezy: open gate and never flat", () => {
   });
 
   it("a weak pick while flat becomes the forced minimum in the stronger |score| direction", () => {
-    const r = run(ctx("breezy", bee("breezy", { flatSince: NOW }), V), breezy, prop(open(BTC.instId, "short", "loose", 5 / 9), 0.69, 3));
+    const r = run(ctx("breezy", bee("breezy", { flatSince: NOW }), V, LEVERAGE_ONLY), breezy, prop(open(BTC.instId, "short", "loose", 5 / 9), 0.69, 3));
     expect(r.vetoedBy).toMatch(/^weak_conviction/);
     expect(r.forcedBy).toBe("max_flat");
     expect(r.action).toMatchObject({ kind: "open", instId: BTC.instId, side: "long" });
@@ -251,13 +253,48 @@ describe("boozy: always holding something", () => {
   });
 
   it("the forced ape is 1x equity (half of max)", () => {
-    const r = run(ctx("boozy", bee("boozy", { flatSince: NOW - 2000 }), V), boozy, null, "no_options");
+    const r = run(ctx("boozy", bee("boozy", { flatSince: NOW - 2000 }), V, LEVERAGE_ONLY), boozy, null, "no_options");
     expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(0.5 * 666 * MARGIN_HEADROOM, 5);
   });
 
   it("always enters at 1x whatever the conviction; size comes from pyramiding", () => {
-    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 3)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
-    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 0)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
+    expect(run(ctx("boozy", bee("boozy"), V, LEVERAGE_ONLY), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 3)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
+    expect(run(ctx("boozy", bee("boozy"), V, LEVERAGE_ONLY), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 0)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
+  });
+});
+
+describe("risk per trade: the stop decides the size", () => {
+  it("a volatile coin gets a small position: the initial stop costs at most MAX_RISK_PER_TRADE_PCT of equity", () => {
+    const wild = coin("WILD", { atr14Pct: 3 }); // boozy's ATR(1h) stop sits many % away
+    const c = ctx("boozy", bee("boozy"), view([wild]));
+    const stop = boozy.stopFor(wild.instId, "long", wild.mid, c)!;
+    const dist = (wild.mid - stop) / wild.mid;
+    expect(dist).toBeGreaterThan(0.05);
+    const r = run(c, boozy, prop(open(wild.instId, "long", "strict", 1), 0.9, 3));
+    const n = (r.action as { notionalUsd: number }).notionalUsd;
+    expect(n).toBeCloseTo((333 * 0.02) / dist, 5);
+    expect(n).toBeLessThan(0.25 * 666 * MARGIN_HEADROOM);
+    expect(riskCapUsd(c, wild.mid, stop)).toBeCloseTo(n, 5);
+  });
+
+  it("a calm coin is still capped by leverage, not by the risk rule", () => {
+    const calm = coin("CALM", { atr14Pct: 0.1 }); // stop 0.2% away: the risk rule would allow $3,330
+    const r = run(ctx("boozy", bee("boozy"), view([calm])), boozy, prop(open(calm.instId, "long", "strict", 1), 0.9, 3));
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM, 5);
+  });
+
+  it("a double-down keeps the whole position inside the budget, measured from the trailed stop", () => {
+    const wild = coin("WILD", { atr14Pct: 3 });
+    const held = position(wild, { contracts: 10 }); // $10 held
+    const c = ctx("boozy", bee("boozy", { position: held, flatSince: null }), view([wild]));
+    const dist = (wild.mid - boozy.trail!(c)!) / wild.mid;
+    const r = run(c, boozy, prop({ kind: "add", sizeFrac: 1 }));
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo((333 * 0.02) / dist - 10, 3);
+  });
+
+  it("refuses a per-trade risk above the daily loss stop", () => {
+    expect(() => testConfig({ MAX_RISK_PER_TRADE_PCT: "9" })).toThrow(/MAX_RISK_PER_TRADE_PCT/);
+    expect(() => testConfig({ MAX_RISK_PER_TRADE_PCT: "0" })).toThrow(/MAX_RISK_PER_TRADE_PCT/);
   });
 });
 
@@ -284,7 +321,7 @@ describe("no hold while flat, and menu sanity", () => {
 
 describe("size cap: 2x and the absolute ceiling", () => {
   it("never exceeds MAX_LEVERAGE x equity", () => {
-    const r = run(ctx("boozy", bee("boozy", { equityUsd: 200, dayStartEquityUsd: 200 }), V), boozy, prop(open(SOL.instId), 0.9, 3));
+    const r = run(ctx("boozy", bee("boozy", { equityUsd: 200, dayStartEquityUsd: 200 }), V, LEVERAGE_ONLY), boozy, prop(open(SOL.instId), 0.9, 3));
     expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(400 * MARGIN_HEADROOM, 5);
   });
 
@@ -304,7 +341,7 @@ describe("size cap: 2x and the absolute ceiling", () => {
 
   it("double-down is capped at the room left under max", () => {
     const b = bee("boozy", { position: position(SOL, { contracts: 500 }), flatSince: null }); // 500 contracts x $1 = $500
-    const r = run(ctx("boozy", b, V), boozy, prop({ kind: "add", sizeFrac: 1 }));
+    const r = run(ctx("boozy", b, V, LEVERAGE_ONLY), boozy, prop({ kind: "add", sizeFrac: 1 }));
     expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM - 500, 5);
   });
 

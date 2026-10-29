@@ -83,6 +83,8 @@ export interface BeeContext {
   now: number;
   /** Unrealised P&L of the open position, in R (null when flat). */
   uplR: number | null;
+  /** Share (0..1) of the other bees in this engine holding an instrument right now. Unset outside the colony. */
+  crowd?: (instId: string) => number;
 }
 
 export interface BeeBrain {

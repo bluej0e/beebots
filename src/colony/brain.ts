@@ -65,25 +65,33 @@ export function strategyText(name: string, g: Genome): string {
   return parts.join(" ");
 }
 
-export function colonyBrain(name: string, g: Genome): BeeBrain {
+/**
+ * @param maxHiveShare the hive spreads its bets: this bee does not open a coin that this share (0..1) of the other
+ * bees already holds. 0 = off. Twelve bees in one coin taught the colony nothing but that coin's luck.
+ */
+export function colonyBrain(name: string, g: Genome, maxHiveShare = 0): BeeBrain {
   const lock = [
     { atPct: g.lock1At, keep: g.lock1Keep },
     { atPct: g.lock2At, keep: g.lock2Keep },
   ].filter((r) => r.keep > 0);
 
+  const crowded = (ctx: BeeContext, instId: string) => maxHiveShare > 0 && (ctx.crowd?.(instId) ?? 0) >= maxHiveShare;
+  /** What this bee may open now: its ranking minus the coins the hive is already crowded into. */
+  const openable = (ctx: BeeContext, ranked: Ranked[]) => ranked.filter((r) => !crowded(ctx, r.s.instId));
+
   /** The coin to rotate into, or null: outranks the held long now and was #1 on the last `switchStreak` hourly ranks. */
   const switchTarget = (ctx: BeeContext, ranked: Ranked[]): Ranked | null => {
     const p = ctx.bee.position;
     if (!p || p.side !== "long") return null;
-    const leader = ranked.filter(longable(g))[0];
+    const leader = openable(ctx, ranked).filter(longable(g))[0];
     if (!leader || leader.s.instId === p.instId || !ranked.some((r) => r.s.instId === p.instId)) return null;
     const { coin, streak } = ctx.bee.top1;
     return coin === leader.s.coin && streak >= g.switchStreak ? leader : null;
   };
 
-  const losers = (ranked: Ranked[]) =>
+  const losers = (ctx: BeeContext, ranked: Ranked[]) =>
     g.shortLosers
-      ? ranked
+      ? openable(ctx, ranked)
           .slice()
           .reverse()
           .filter((r) => (r.s.ret24hPct ?? 0) < 0)
@@ -102,11 +110,11 @@ export function colonyBrain(name: string, g: Genome): BeeBrain {
 
     snapshotCoins(ctx) {
       const ranked = rank(ctx.view, g);
-      const ids = ranked
+      const ids = openable(ctx, ranked)
         .filter(longable(g))
         .slice(0, g.candidates)
         .map((r) => r.s.instId);
-      for (const r of losers(ranked)) if (!ids.includes(r.s.instId)) ids.push(r.s.instId);
+      for (const r of losers(ctx, ranked)) if (!ids.includes(r.s.instId)) ids.push(r.s.instId);
       const p = ctx.bee.position;
       if (p && !ids.includes(p.instId)) ids.push(p.instId);
       return ids;
@@ -131,10 +139,10 @@ export function colonyBrain(name: string, g: Genome): BeeBrain {
       const m: Menu = {};
       const p = ctx.bee.position;
       if (!p) {
-        const top = ranked.filter(longable(g)).slice(0, g.candidates);
+        const top = openable(ctx, ranked).filter(longable(g)).slice(0, g.candidates);
         // Rules-only bees take the first option, so the order here is their preference.
         for (const [i, r] of top.entries()) m[`APE_${r.s.coin}`] = { desc: `#${i + 1} momentum`, intent: { kind: "open", instId: r.s.instId, side: "long", sizeFrac: g.entryFrac, setup: "strict" } };
-        for (const r of losers(ranked)) m[`SHORT_${r.s.coin}`] = { desc: `weakest, 24h ${r2(r.s.ret24hPct, 0)}%`, intent: { kind: "open", instId: r.s.instId, side: "short", sizeFrac: g.entryFrac, setup: "strict" } };
+        for (const r of losers(ctx, ranked)) m[`SHORT_${r.s.coin}`] = { desc: `weakest, 24h ${r2(r.s.ret24hPct, 0)}%`, intent: { kind: "open", instId: r.s.instId, side: "short", sizeFrac: g.entryFrac, setup: "strict" } };
         if (g.canWait) m.WAIT = { desc: "stay flat", intent: { kind: "hold" } };
         return m;
       }
@@ -165,7 +173,7 @@ export function colonyBrain(name: string, g: Genome): BeeBrain {
     },
 
     forcedEntry(ctx) {
-      const r = rank(ctx.view, g).filter(longable(g))[0];
+      const r = openable(ctx, rank(ctx.view, g)).filter(longable(g))[0];
       return r ? { kind: "open", instId: r.s.instId, side: "long", sizeFrac: g.entryFrac, setup: "loose" } : null;
     },
 
