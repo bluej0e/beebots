@@ -13,7 +13,7 @@ import { Jev, type SystemOne } from "../src/jev.js";
 import type { MarketFeed } from "../src/market/data.js";
 import { coin, NOW, testConfig, view } from "./fixtures.js";
 
-function rig(decideEveryMs = 0) {
+function rig(decideEveryMs = 0, maxHiveShare = 0) {
   const cfg = testConfig({ DRY_RUN: "true" });
   const ena = coin("ENA", { ret24hPct: 25, ret7dPct: 43 });
   const v = view([ena, coin("SUI", { ret24hPct: 12, ret7dPct: 40 })]);
@@ -41,7 +41,8 @@ function rig(decideEveryMs = 0) {
   };
   let ids = ["a", "b"];
   const exits: Array<[string, BeeState]> = [];
-  const brain = colonyBrain("T", ORAKELIA);
+  // With a hive share the bees run on rules alone, so the crowd rule, not the fake Jev, picks the coin.
+  const brain = colonyBrain("T", maxHiveShare ? { ...ORAKELIA, useJev: false } : ORAKELIA, maxHiveShare);
   const roster: Roster = {
     ids: () => ids,
     name: (id) => id.toUpperCase(),
@@ -83,6 +84,15 @@ describe("engine with a colony roster", () => {
     r.advance(10_000);
     await r.engine.tick();
     expect(r.exits).toHaveLength(1);
+  });
+
+  it("bees decide one after another, so the second sees the first's coin as crowded and takes the next one", async () => {
+    const r = rig(0, 0.34);
+    await r.engine.start();
+    r.engine.stop();
+    await r.engine.tick();
+    expect(r.engine.bees.a!.position?.coin).toBe("ENA");
+    expect(r.engine.bees.b!.position?.coin).toBe("SUI");
   });
 
   it("each bee starts with its roster's paper money, and a $100 bee is not retired against the $333 line", async () => {

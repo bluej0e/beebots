@@ -286,15 +286,17 @@ export class Engine {
       if (this.closedAt === null && this.d.closeRequested?.()) this.beginClose(now);
       if (this.closedAt === null && this.d.takeResumeRequest?.()) await this.resumeLast(now);
       if (this.closedAt !== null) await this.windDown(now);
-      else
-        await Promise.all(
-          active.map((id) => {
-            const every = this.roster.decideEveryMs?.(id) ?? 0;
-            const due = now - (this.lastDecideAt[id] ?? 0) >= every;
-            if (due) this.lastDecideAt[id] = now;
-            return (due ? this.decide(id, now) : this.guardStop(id, now)).catch((err) => log.error("decision failed", { bee: id, err: safeError(err) }));
-          }),
-        );
+      else {
+        // One bee at a time, in roster order (the colony's royals first): a bee that opens on this tick is already
+        // holding when the next one looks at how crowded a coin is. Decided all at once, a hive of 15 flat bees saw
+        // an empty hive and piled into the same coin.
+        for (const id of active) {
+          const every = this.roster.decideEveryMs?.(id) ?? 0;
+          const due = now - (this.lastDecideAt[id] ?? 0) >= every;
+          if (due) this.lastDecideAt[id] = now;
+          await (due ? this.decide(id, now) : this.guardStop(id, now)).catch((err) => log.error("decision failed", { bee: id, err: safeError(err) }));
+        }
+      }
 
       if (now - this.lastEquityAt >= EQUITY_SNAPSHOT_MS) {
         this.lastEquityAt = now;
