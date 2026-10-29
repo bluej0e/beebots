@@ -19,6 +19,9 @@ export interface Live {
   equityUsd: number;
   pnlUsd: number;
   pnlPct: number;
+  /** What holding BTC over this bee's lifetime returned, and the bee's P&L minus that. Null until the hold line has data. */
+  holdPct: number | null;
+  vsHoldPct: number | null;
   position: Position | null;
   flatMinutes: number | null;
   cap: string | null;
@@ -87,6 +90,8 @@ export interface ColonyView {
   firstMarksAt: number | null;
   activity: { decisions: number; fills: number; lastDecisionAt: number | null; continuousSince: number | null; longestGapMin: number; uptimeS: number | null; marketAgeMs: number | null };
   stats: { born: number; alive: number; died: number; maxGeneration: number; eggs: number };
+  /** Just holding BTC: the yardstick every bee is set against. */
+  benchmark: { coin: string; since: number | null; px: number | null; sinceFoundingPct: number | null; last24hPct: number | null };
   royals: Bee[];
   workers: Bee[];
   nursery: Array<Bee & { hatchBy: number }>;

@@ -63,6 +63,13 @@ values laid over Orakelia are his **blend**: a lesson that fades takes its chang
 
 Every round, egg, birth, death and promotion is in the hive log (`colony_log` table) and on the dashboard.
 
+## The yardstick: just holding
+
+Doing nothing is the bar. The colony writes down BTC's price once a minute (`colony_benchmark` table) and the
+dashboard shows every bee's P&L against simply holding BTC over the same hours, plus the hold line since the colony
+was founded. Stars and X's stay absolute (a star needs a gain), but a royal is not to be trusted with money until
+it beats that line over months, after fees and Jev. The first colony's royals lost 14-35% while BTC lost 3%.
+
 ## The genes
 
 Every Momentum constant is a gene (`src/colony/genome.ts`). Nothing in the genome can touch leverage past

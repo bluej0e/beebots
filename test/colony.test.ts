@@ -260,6 +260,30 @@ describe("colony", () => {
     expect(colony.nextRatingAt()).toBe(T0 + 2 * every);
   });
 
+  it("writes down BTC once a minute and sets any stretch against just holding it", () => {
+    const { colony, at } = make();
+    let px = 80_000;
+    colony.setPriceSource((coin) => (coin === "BTC" ? px : null));
+    colony.tick(); // T0: 80,000
+    at(T0 + 30_000);
+    px = 90_000;
+    colony.tick(); // too soon: not written
+    at(T0 + 61_000);
+    px = 88_000;
+    colony.tick(); // 88,000
+    at(T0 + 24 * HOUR);
+    px = 84_000;
+    colony.tick();
+    expect(colony.holdPct(T0, T0 + 61_000)).toBeCloseTo(10, 2);
+    expect(colony.holdPct(T0, T0 + 24 * HOUR)).toBeCloseTo(5, 2);
+    expect(colony.holdPct(T0 + 48 * HOUR, T0 + 49 * HOUR)).toBeNull();
+    const b = colony.benchmark(T0 + 24 * HOUR);
+    expect(b).toMatchObject({ coin: "BTC", since: T0, px: 84_000 });
+    expect(b.sinceFoundingPct).toBeCloseTo(5, 2);
+    expect(b.last24hPct).toBeCloseTo(5, 2);
+    expect(make().colony.benchmark().sinceFoundingPct).toBeNull(); // no price source: no line
+  });
+
   it("a round scores only the time since the last round: one bad day is one X, not five", () => {
     const c = make(2);
     const [a, ...rest] = c.colony.workers();

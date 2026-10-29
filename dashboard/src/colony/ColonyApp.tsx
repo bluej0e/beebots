@@ -169,6 +169,11 @@ function RoyalCard({ b, curve, base, onOpen }: { b: Bee; curve?: Array<[number, 
         <span className="num big">{b.live ? money(b.live.equityUsd) : "—"}</span>
         <span className={`num ${tone(b.live?.pnlPct)}`}>{b.live ? `${signed(b.live.pnlPct)}%` : ""}</span>
       </div>
+      {b.live?.vsHoldPct !== null && b.live?.vsHoldPct !== undefined && (
+        <div className={`dim small num ${tone(b.live.vsHoldPct)}`} title={`holding BTC over the same hours: ${signed(b.live.holdPct ?? 0)}%`}>
+          {signed(b.live.vsHoldPct)}% vs holding BTC
+        </div>
+      )}
       <Spark points={curve} base={base} tall />
       <PositionLine b={b} />
       <div className="royal-dna">
@@ -417,6 +422,10 @@ function PulseStats({ view }: { view: ColonyView }) {
       <div>
         <span className="eyebrow">founded</span>
         <span className="num">{ago(view.startedAt, now)}</span>
+      </div>
+      <div title={`doing nothing is the bar: what holding ${view.benchmark?.coin ?? "BTC"} since the colony was founded returned · last 24h ${view.benchmark?.last24hPct === null || view.benchmark?.last24hPct === undefined ? "—" : signed(view.benchmark.last24hPct) + "%"}`}>
+        <span className="eyebrow">holding {view.benchmark?.coin ?? "BTC"}</span>
+        <span className={`num ${tone(view.benchmark?.sinceFoundingPct ?? undefined)}`}>{view.benchmark?.sinceFoundingPct === null || view.benchmark?.sinceFoundingPct === undefined ? "—" : `${signed(view.benchmark.sinceFoundingPct)}%`}</span>
       </div>
     </>
   );

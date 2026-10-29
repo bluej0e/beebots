@@ -94,6 +94,10 @@ async function main() {
 
   engine = new Engine({ cfg, db, feed, jev, exec, bus, alerts, roster: colony });
   await engine.start();
+  colony.setPriceSource((coin) => {
+    const id = feed.instIdForCoin(coin);
+    return (id && feed.view().stats.get(id)?.mid) || null;
+  });
   if (/^(1|true|yes|on)$/i.test(env.COLONY_KEEPER_CLAUDE?.trim() ?? "")) colony.setAdvisor(claudeAdvisor(env.CLAUDE_KEEPER_MODEL?.trim() || "claude-opus-5-5"));
   colony.tick();
   const colonyTimer = setInterval(() => colony.tick(), 30_000);

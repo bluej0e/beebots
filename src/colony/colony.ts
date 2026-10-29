@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS colony_ratings (
 CREATE INDEX IF NOT EXISTS colony_ratings_round ON colony_ratings(round);
 CREATE TABLE IF NOT EXISTS colony_log (id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, kind TEXT NOT NULL, bee TEXT, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS colony_diary (id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, text TEXT NOT NULL, quip TEXT);
+CREATE TABLE IF NOT EXISTS colony_benchmark (ts INTEGER NOT NULL, coin TEXT NOT NULL, px REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS colony_benchmark_coin_ts ON colony_benchmark (coin, ts);
 `;
 
 /** "egg": laid, waiting in the nursery for a cell. Not trading yet. */
@@ -130,6 +132,9 @@ export const ROYAL_RULES: Record<Role, RoyalRule> = {
 /** Days of the King's week a worker must win against him. */
 export const KING_DAYS_TO_WIN = 5;
 
+/** The coin whose buy-and-hold is the colony's yardstick. */
+export const BENCHMARK = "BTC";
+
 export interface Score {
   bee: string;
   score: number;
@@ -202,6 +207,8 @@ export class Colony implements Roster {
   private seq: number;
   private lessonsCache: { at: number; lessons: Lessons } | null = null;
   private advisor: Advisor | null = null;
+  private priceOf: ((coin: string) => number | null) | null = null;
+  private lastMarkAt = 0;
 
   constructor(
     private db: Db,
@@ -224,6 +231,41 @@ export class Colony implements Roster {
   /** An outside voice for the beekeeper's daily visit (diary, quip, up to 3 tweaks on the Prince). Optional. */
   setAdvisor(a: Advisor | null): void {
     this.advisor = a;
+  }
+
+  /** Where the yardstick's price comes from (the market feed). Without it there is no hold line. */
+  setPriceSource(f: ((coin: string) => number | null) | null): void {
+    this.priceOf = f;
+  }
+
+  // ---------- the yardstick: just holding ----------
+
+  /**
+   * Doing nothing is the bar every bee has to clear. The colony writes down BENCHMARK's price once a minute, so any
+   * bee's run can be set against simply holding it over the same hours: a royal is not to be trusted with money
+   * until it beats that line, and a star for "lost less than the market" is still a loss.
+   */
+  private markBenchmark(now: number): void {
+    if (!this.priceOf || now - this.lastMarkAt < 60_000) return;
+    const px = this.priceOf(BENCHMARK);
+    if (px === null || !(px > 0)) return;
+    this.lastMarkAt = now;
+    this.db.raw.prepare(`INSERT INTO colony_benchmark (ts, coin, px) VALUES (?,?,?)`).run(now, BENCHMARK, px);
+  }
+
+  /** What holding BENCHMARK from `fromTs` to `toTs` returned (%), or null without prices for both ends. */
+  holdPct(fromTs: number, toTs: number): number | null {
+    const first = this.db.raw.prepare(`SELECT px FROM colony_benchmark WHERE coin = ? AND ts >= ? ORDER BY ts LIMIT 1`).get(BENCHMARK, fromTs) as { px: number } | undefined;
+    const last = this.db.raw.prepare(`SELECT px FROM colony_benchmark WHERE coin = ? AND ts <= ? ORDER BY ts DESC LIMIT 1`).get(BENCHMARK, toTs) as { px: number } | undefined;
+    if (!first || !last) return null;
+    return Number((((last.px - first.px) / first.px) * 100).toFixed(3));
+  }
+
+  /** The hold line for the dashboard: since the colony was founded, and over the last day. */
+  benchmark(now = this.now()): { coin: string; since: number | null; px: number | null; sinceFoundingPct: number | null; last24hPct: number | null } {
+    const first = this.db.raw.prepare(`SELECT ts FROM colony_benchmark WHERE coin = ? ORDER BY ts LIMIT 1`).get(BENCHMARK) as { ts: number } | undefined;
+    const last = this.db.raw.prepare(`SELECT px FROM colony_benchmark WHERE coin = ? ORDER BY ts DESC LIMIT 1`).get(BENCHMARK) as { px: number } | undefined;
+    return { coin: BENCHMARK, since: first?.ts ?? null, px: last?.px ?? null, sinceFoundingPct: first ? this.holdPct(first.ts, now) : null, last24hPct: this.holdPct(now - 24 * HOUR, now) };
   }
 
   // ---------- Roster (what the engine reads) ----------
@@ -378,6 +420,7 @@ export class Colony implements Roster {
   tick(): void {
     const now = this.now();
     try {
+      this.markBenchmark(now);
       // The first call only sets the clocks: nothing has a track record yet.
       const rating = this.nextRatingAt();
       if (now >= rating) {

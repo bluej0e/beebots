@@ -11,6 +11,8 @@ export function colonyView(colony: Colony, snap: Snap, health?: { uptimeS: numbe
   const now = snap.ts;
   const bee = (b: ColonyBee) => {
     const live = books.get(b.id) ?? null;
+    // Against just holding BTC for the same hours: the bar a bee has to clear, whatever its own P&L says.
+    const hold = live ? colony.holdPct(b.bornAt, b.diedAt ?? now) : null;
     return {
       id: b.id,
       tier: b.tier,
@@ -39,6 +41,8 @@ export function colonyView(colony: Colony, snap: Snap, health?: { uptimeS: numbe
         equityUsd: live.equityUsd,
         pnlUsd: live.pnlUsd,
         pnlPct: live.pnlPct,
+        holdPct: hold,
+        vsHoldPct: hold === null ? null : Number((live.pnlPct - hold).toFixed(2)),
         position: live.position,
         flatMinutes: live.flatMinutes,
         cap: live.cap,
@@ -88,6 +92,7 @@ export function colonyView(colony: Colony, snap: Snap, health?: { uptimeS: numbe
     genes: GENE_NAMES.map((n) => ({ name: n, ...GENES[n] })),
     jev: snap.jev,
     market: { refreshedAt: snap.market.refreshedAt, coins: snap.market.universe.length },
+    benchmark: colony.benchmark(now),
   };
 }
 
